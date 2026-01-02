@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MidKnight VIP Services — Phase 1 MVP</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#0b0b10; color:#e9e9f1; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 16px 64px; }
+    .top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 18px; }
+    .brand { display:flex; align-items:center; gap:12px; }
+    .logo { width:44px; height:44px; border-radius:12px; background:linear-gradient(135deg,#ff2d8d,#7c3aed); display:grid; place-items:center; font-weight:800; color:#fff; font-size:18px; }
+    .muted { color:#a7a7bd; font-size: 13px; }
+    .pill { padding:6px 10px; border:1px solid #26263a; border-radius:999px; background:#12121a; font-size:12px; color:#cfcfe5; }
+    .grid { display:grid; gap:14px; grid-template-columns: 1.1fr 0.9fr; }
+    @media (max-width: 980px){ .grid { grid-template-columns: 1fr; } }
+    .card { border:1px solid #232338; background:#10101a; border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:12px; }
+    .card h2 { margin: 0; font-size: 14px; letter-spacing: .2px; text-transform:uppercase; color:#7c7c98; font-weight:700; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .btn { cursor:pointer; border:1px solid #2a2a43; background:#171724; color:#e9e9f1; border-radius:10px; padding:8px 12px; font-weight:600; font-size:13px; }
+    .btn.primary { border-color:#6d28d9; background:linear-gradient(135deg,#6d28d9,#ff2d8d); color:white; text-decoration: none; display: inline-block; text-align: center; }
+    .btn.danger { border-color:#b91c1c; background:#1a0f13; color:#ffd7d7; }
+    .select { appearance:none; background:#0c0c13; border:1px solid #2a2a43; color:#e9e9f1; padding:6px 12px; border-radius:8px; font-size:13px; }
+    .table { width:100%; border-collapse: collapse; }
+    .table th, .table td { border-bottom:1px solid #202033; padding:10px 8px; text-align:left; font-size:13px; }
+    .table th { color:#bdbde0; font-weight:700; font-size:11px; text-transform: uppercase; }
+    .status { display:flex; align-items:center; gap:8px; }
+    .dot { width:8px; height:8px; border-radius:999px; background:#444; }
+    .dot.ok { background:#22c55e; }
+    .dot.warn { background:#f59e0b; }
+    .mono { font-family: ui-monospace, monospace; font-size:12px; }
+    .textarea { width:100%; min-height: 100px; border-radius: 12px; border:1px solid #26263a; background:#0c0c13; color:#e9e9f1; padding:12px; font-family: ui-monospace, monospace; font-size:12px; }
+    .small { font-size:12px; color:#a7a7bd; }
+    .hr { height:1px; background:#1f1f31; margin: 4px 0; border:0; width:100%; }
+    .profile { display:flex; align-items:center; gap:12px; margin-left:16px; }
+    .avatar { width:36px; height:36px; border-radius:50%; background:#2a2a43; object-fit:cover; }
+    .auth-section { display:flex; align-items:center; gap:12px; }
+    .auth-btn { background:#1a1a2a; border-color:#3a3a5a; }
+    .logout-btn { background:#b91c1c20; border-color:#b91c1c80; color:#ffb4b4; }
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+
+<div class="top">
+  <div class="brand">
+    <div class="logo">MV</div>
+    <div>
+      <div style="font-weight:900;">MidKnight VIP Services</div>
+      <div class="muted">Phase 1: Live Fanvue Control</div>
+    </div>
+  </div>
+  <div id="authContainer" class="auth-section">
+    <div id="profileSection" style="display:none;" class="profile">
+      <img id="avatarImg" class="avatar" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%234a4a6a' d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E" alt="Profile">
+      <div>
+        <div id="usernameDisplay" style="font-weight:600;"></div>
+        <div id="handleDisplay" class="muted" style="font-size:12px;"></div>
+      </div>
+    </div>
+    <button id="loginBtn" class="btn primary">Start OAuth Login</button>
+    <button id="logoutBtn" class="btn danger" style="display:none;">Logout</button>
+  </div>
+</div>
+
+<div class="grid">
+
+<div class="card">
+<h2>Operations Console</h2>
+
+<div class="row">
+  <button class="btn primary" id="btnEnable">Enable Auto-Reply</button>
+  <button class="btn danger" id="btnKill">Kill Switch</button>
+</div>
+
+<hr class="hr"/>
+
+<table class="table">
+<tr><th>Component</th><th>Status</th></tr>
+<tr><td>Auth Token</td><td class="status"><span id="dotToken" class="dot warn"></span><b id="txtToken">Missing</b></td></tr>
+<tr><td>Reply Engine</td><td class="status"><span id="dotReply" class="dot warn"></span><b id="txtReply">Standby</b></td></tr>
+</table>
+
+<hr class="hr"/>
+
+<h2>Webhook Payload</h2>
+<textarea class="textarea" id="payloadBox" readonly>// No webhook received yet</textarea>
+
+</div>
+
+<div class="card">
+<h2>Reply Generator</h2>
+
+<select id="personaSelect" class="select">
+  <option value="sweet">Sweet</option>
+  <option value="flirty" selected>Flirty</option>
+  <option value="dominant">Dominant</option>
+</select>
+
+<select id="goalSelect" class="select">
+  <option value="sub">Subscription</option>
+  <option value="tip">Tip</option>
+  <option value="ppv" selected>PPV</option>
+</select>
+
+<hr class="hr"/>
+
+<h2>Generated Reply</h2>
+<textarea class="textarea" id="replyTemplate" readonly>// Select persona and goal to generate reply</textarea>
+
+<h2>Activity Log</h2>
+<div id="activity" class="mono" style="max-height:150px; overflow-y:auto;"></div>
+
+</div>
+</div>
+</div>
+
+<script>
+const logBox = document.getElementById('activity');
+const payloadBox = document.getElementById('payloadBox');
+const dotToken = document.getElementById('dotToken');
+const txtToken = document.getElementById('txtToken');
+const dotReply = document.getElementById('dotReply');
+const txtReply = document.getElementById('txtReply');
+const loginBtn = document.getElementById('loginBtn');
+const logoutBtn = document.getElementById('logoutBtn');
+const profileSection = document.getElementById('profileSection');
+const avatarImg = document.getElementById('avatarImg');
+const usernameDisplay = document.getElementById('usernameDisplay');
+const handleDisplay = document.getElementById('handleDisplay');
+
+let state = { token:false, replies:false, profile:null };
+
+document.addEventListener('DOMContentLoaded', () => {
+  checkAuthStatus();
+  setInterval(checkAuthStatus, 5000);
+  
+  loginBtn.addEventListener('click', startOAuthFlow);
+  logoutBtn.addEventListener('click', logout);
+  document.getElementById('btnEnable').addEventListener('click', enableAutoReply);
+  document.getElementById('btnKill').addEventListener('click', killSwitch);
+});
+
+function log(msg){
+  const now = new Date().toLocaleTimeString();
+  logBox.innerHTML = `<div>[${now}] ${msg}</div>` + logBox.innerHTML;
+  logBox.scrollTop = 0;
+}
+
+function updateUI(){
+  // Update auth token status
+  if(state.token){
+    dotToken.className='dot ok'; 
+    txtToken.textContent='Active';
+  } else {
+    dotToken.className='dot warn'; 
+    txtToken.textContent='Missing';
+  }
+  
+  // Update reply engine status
+  if(state.replies){
+    dotReply.className='dot ok'; 
+    txtReply.textContent='Running';
+  } else {
+    dotReply.className='dot'; 
+    txtReply.textContent='Standby';
+  }
+  
+  // Update profile display
+  if(state.profile){
+    profileSection.style.display = 'flex';
+    loginBtn.style.display = 'none';
+    logoutBtn.style.display = 'inline-block';
+    
+    avatarImg.src = state.profile.avatar_url || avatarImg.src;
+    usernameDisplay.textContent = state.profile.username;
+    handleDisplay.textContent = state.profile.handle;
+  } else {
+    profileSection.style.display = 'none';
+    loginBtn.style.display = 'inline-block';
+    logoutBtn.style.display = 'none';
+  }
+}
+
+async function checkAuthStatus() {
+  try {
+    const response = await fetch('/api/me');
+    if (response.ok) {
+      const profile = await response.json();
+      state.token = true;
+      state.profile = profile;
+      log('✅ Authenticated as ' + profile.username);
+    } else {
+      state.token = false;
+      state.profile = null;
+      const error = await response.json().catch(() => ({}));
+      if (error.error !== 'Not authenticated') {
+        log(`❌ Auth check failed: ${error.error || 'Unknown error'}`);
+      }
+    }
+    updateUI();
+  } catch (error) {
+    log(`⚠️ Auth check error: ${error.message}`);
+  }
+}
+
+function startOAuthFlow() {
+  window.location.href = '/oauth/start';
+}
+
+async function logout() {
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+    state.token = false;
+    state.profile = null;
+    log('✅ Logged out successfully');
+    updateUI();
+  } catch (error) {
+    log(`❌ Logout failed: ${error.message}`);
+  }
+}
+
+function enableAutoReply() {
+  if(!state.token){ 
+    log('❌ Cannot enable: No valid token'); 
+    return; 
+  }
+  state.replies = true;
+  log('✅ Auto-reply engine enabled');
+  updateUI();
+}
+
+function killSwitch() {
+  state.replies = false;
+  log('🚨 Kill switch activated - All operations paused');
+  updateUI();
+}
+
+// Initialize UI
+updateUI();
+</script>
+
+</body>
+</html>
