@@ -74,6 +74,7 @@ app.get("/oauth/start", (req, res) => {
     .update(codeVerifier)
     .digest("base64url");
 
+  // CORRECT AUTHORIZATION URL (no spaces, proper endpoint)
   const authUrl = new URL(`${OAUTH_ISSUER_BASE_URL}/connect/authorize`);
   authUrl.searchParams.append("response_type", "code");
   authUrl.searchParams.append("client_id", OAUTH_CLIENT_ID);
@@ -128,13 +129,14 @@ app.get("/oauth/callback", async (req, res) => {
 
     const tokens = await tokenRes.json();
     
-    // Get user profile
+    // Get user profile - CORRECTED ENDPOINT
     const profileRes = await fetch(`${API_BASE_URL}/v1/me`, {
       headers: { Authorization: `Bearer ${tokens.access_token}` }
     });
 
     if (!profileRes.ok) {
-      console.error("Profile fetch failed:", await profileRes.text());
+      const error = await profileRes.json().catch(() => ({}));
+      console.error("Profile fetch failed:", error);
       return res.status(400).send("Failed to load profile");
     }
 
@@ -166,17 +168,11 @@ app.get("/api/me", (req, res) => {
   
   // Return only necessary profile data
   res.json({
-    username: session.profile.username || session.profile.name,
-    handle: `@${session.profile.username}`,
-    avatar_url: session.profile.profile_image_url || session.profile.avatar_url,
+    username: session.profile.username || session.profile.name || "User",
+    handle: `@${session.profile.username || "user"}`,
+    avatar_url: session.profile.profile_image_url || session.profile.avatar_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%234a4a6a' d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E",
     authenticated: true
   });
-});
-
-app.post("/api/webhook", (req, res) => {
-  // Placeholder for webhook handling
-  console.log("Webhook received:", req.body);
-  res.json({ status: "received" });
 });
 
 app.post("/api/logout", (req, res) => {
@@ -184,22 +180,7 @@ app.post("/api/logout", (req, res) => {
   res.json({ status: "logged_out" });
 });
 
-/** ===== Session Middleware ===== **/
-const requireAuth = (req, res, next) => {
-  const session = readSession(req);
-  if (!session) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-  req.session = session;
-  next();
-};
-
-/** ===== Serve Frontend ===== **/
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
-});
-
-/** ===== Cleanup ===== **/
+/** ===== Session Cleanup ===== **/
 setInterval(() => {
   const now = Date.now();
   for (const [key, value] of SESS.entries()) {
@@ -214,8 +195,13 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
+/** ===== Serve Frontend ===== **/
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
+});
+
 /** ===== Start Server ===== **/
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔑 OAuth Redirect URI should be: ${OAUTH_REDIRECT_URI}`);
+  console.log(`🔑 OAuth Redirect URI: ${OAUTH_REDIRECT_URI}`);
 });
