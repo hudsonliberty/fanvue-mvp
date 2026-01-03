@@ -7,10 +7,10 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Trust Render's reverse proxy for correct protocol/host
+// Trust proxy for correct protocol/host on Render
 app.set('trust proxy', true);
 
-// Load and trim credentials
+// Load credentials securely
 const CLIENT_ID = (process.env.CLIENT_ID || '').trim();
 const CLIENT_SECRET = (process.env.CLIENT_SECRET || '').trim();
 
@@ -25,7 +25,7 @@ console.log(`Client Secret length: ${CLIENT_SECRET.length}`);
 console.log(`Port: ${PORT}`);
 console.log('='.repeat(60));
 
-// Simple in-memory session store for PKCE state
+// In-memory session store for PKCE state
 const sessions = new Map();
 
 app.use(express.json());
@@ -40,29 +40,24 @@ app.options('/*', (req, res) => {
   res.sendStatus(200);
 });
 
-// Guard: Block OAuth routes if credentials missing
+// Guard: OAuth routes disabled if credentials missing
 if (!CLIENT_ID || !CLIENT_SECRET) {
-  console.error('❌ Missing CLIENT_ID or CLIENT_SECRET – OAuth routes disabled');
+  console.error('❌ Missing CLIENT_ID or CLIENT_SECRET – OAuth disabled');
   app.get('/oauth/start', (req, res) => {
-    res.status(503).send(`
-      <h1>Server Misconfigured</h1>
-      <p>Missing Fanvue OAuth credentials.</p>
-      <p>Set <code>CLIENT_ID</code> and <code>CLIENT_SECRET</code> in Render environment variables.</p>
-    `);
+    res.status(503).send('<h1>Server Misconfigured</h1><p>Set <code>CLIENT_ID</code> and <code>CLIENT_SECRET</code> in Render environment variables.</p>');
   });
 } else {
-  // OAuth initiation
+  // OAuth: Start authorization
   app.get('/oauth/start', (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     const nonce = crypto.randomBytes(16).toString('hex');
+
     const codeVerifier = crypto
       .randomBytes(32)
       .toString('base64url')
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=/g, '');
-
-    sessions.set(state, { nonce, codeVerifier, timestamp: Date.now() });
 
     const codeChallenge = crypto
       .createHash('sha256')
@@ -72,6 +67,8 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
       .replace(/\//g, '_')
       .replace(/=/g, '');
 
+    sessions.set(state, { nonce, codeVerifier, timestamp: Date.now() });
+
     const redirectUri = `${req.protocol}://${req.get('host')}/oauth/callback`;
 
     console.log('='.repeat(60));
@@ -79,7 +76,8 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
     console.log(`Redirect URI: ${redirectUri}`);
     console.log('='.repeat(60));
 
-    const authUrl = new URL('https://auth.fanvue.com/oauth2/auth');
+    const authUrl = new URL('https://auth.fanvue.com/authorize');  // Correct endpoint
+
     authUrl.searchParams.append('response_type', 'code');
     authUrl.searchParams.append('client_id', CLIENT_ID);
     authUrl.searchParams.append('redirect_uri', redirectUri);
@@ -93,7 +91,7 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
   });
 }
 
-// OAuth callback – always registered (even if creds missing, for better errors)
+// OAuth: Callback – token exchange
 app.get('/oauth/callback', async (req, res) => {
   const { code, state } = req.query;
 
@@ -114,11 +112,15 @@ app.get('/oauth/callback', async (req, res) => {
 
   try {
     const redirectUri = `${req.protocol}://${req.get('host')}/oauth/callback`;
-
     const basicAuth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
 
+    console.log('='.repeat(60));
+    console.log('🔑 TOKEN EXCHANGE ATTEMPT');
+    console.log(`Redirect URI: ${redirectUri}`);
+    console.log('='.repeat(60));
+
     const tokenResponse = await axios.post(
-      'https://auth.fanvue.com/oauth2/token',
+      'https://auth.fanvue.com/oauth/token',  // Correct endpoint (no /oauth2)
       new URLSearchParams({
         grant_type: 'authorization_code',
         code,
@@ -138,6 +140,8 @@ app.get('/oauth/callback', async (req, res) => {
 
     const { access_token } = tokenResponse.data;
 
+    console.log('✅ Token exchange successful');
+
     const apiHeaders = {
       Authorization: `Bearer ${access_token}`,
       'X-Fanvue-API-Version': '2025-06-26',
@@ -152,7 +156,7 @@ app.get('/oauth/callback', async (req, res) => {
     const creatorName = creatorData.displayName || creatorData.handle || 'Unknown Creator';
     const profilePic = creatorData.avatarUrl || '';
 
-    // Fetch first page of subscribers
+    // Fetch subscribers (page 1)
     const subscribersResponse = await axios.get('https://api.fanvue.com/v1/creator/subscribers', {
       params: { page: 1, size: 50 },
       headers: apiHeaders,
@@ -170,21 +174,21 @@ app.get('/oauth/callback', async (req, res) => {
         <style>
           body { font-family: system-ui, sans-serif; background: #f0f2f5; color: #333; padding: 20px; }
           .container { max-width: 900px; margin: 40px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
-          .header { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 40px; text-align: center; }
-          .profile-section { text-align: center; margin: -60px auto 40px; }
-          img { width: 140px; height: 140px; border-radius: 50%; border: 6px solid white; box-shadow: 0 8px 25px rgba(0,0,0,0.2); }
-          .stats { display: flex; justify-content: center; gap: 30px; flex-wrap: wrap; padding: 20px; }
-          .stat { background: #f8f9fa; padding: 20px; border-radius: 12px; min-width: 180px; text-align: center; }
-          .stat strong { font-size: 2.2em; display: block; color: #667eea; }
-          footer { text-align: center; padding: 30px; color: #666; }
+          .header { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 50px; text-align: center; }
+          .profile { text-align: center; margin: -70px auto 40px; }
+          img { width: 140px; height: 140px; border-radius: 50%; border: 6px solid white; box-shadow: 0 8px 25px rgba(0,0,0,0.2); object-fit: cover; }
+          .stats { display: flex; justify-content: center; gap: 30px; flex-wrap: wrap; padding: 30px; }
+          .stat { background: #f8f9fa; padding: 25px; border-radius: 12px; min-width: 180px; text-align: center; }
+          .stat strong { font-size: 2.4em; display: block; color: #667eea; }
+          footer { text-align: center; padding: 30px; color: #666; font-size: 0.9em; }
           a { color: #667eea; text-decoration: none; font-weight: bold; }
         </style>
       </head>
       <body>
         <div class="container">
-          <div class="header"><h1>✅ Fanvue API Connected!</h1></div>
-          <div class="profile-section">
-            ${profilePic ? `<img src="${profilePic}" alt="Profile">` : '<div style="width:140px;height:140px;background:#ccc;border-radius:50%;margin:0 auto;"></div>'}
+          <div class="header"><h1>✅ Fanvue API Connected Successfully!</h1></div>
+          <div class="profile">
+            ${profilePic ? `<img src="${profilePic}" alt="${creatorName}">` : '<div style="width:140px;height:140px;background:#ccc;border-radius:50%;margin:0 auto;"></div>'}
             <h2>${creatorName}</h2>
           </div>
           <div class="stats">
@@ -200,23 +204,29 @@ app.get('/oauth/callback', async (req, res) => {
       </html>
     `);
   } catch (error) {
-    console.error('🔥 Token exchange failed:', error.response?.data || error.message);
+    console.error('🔥 Token exchange failed');
+    console.error('Status:', error.response?.status);
+    console.error('Data:', error.response?.data || error.message);
 
     const errorMsg = error.response?.data?.error_description || error.message || 'Unknown error';
 
     res.status(500).send(`
       <!DOCTYPE html>
-      <html><head><title>Auth Failed</title><style>body{font-family:system-ui,sans-serif;padding:40px;background:#f8f9fa;}</style></head>
+      <html>
+      <head><title>Auth Failed</title>
+      <style>
+        body { font-family: system-ui; background: #f8f9fa; padding: 40px; text-align: center; }
+        .box { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 4px 8px; border-radius: 6px; }
+      </style>
+      </head>
       <body>
-        <h1>❌ Authentication Failed</h1>
-        <p><strong>Error:</strong> ${errorMsg}</p>
-        <p>Common causes:</p>
-        <ul>
-          <li>Redirect URI mismatch in Fanvue dashboard</li>
-          <li>Invalid or revoked Client ID/Secret</li>
-          <li>Browser cookies not cleared</li>
-        </ul>
-        <p><a href="/oauth/start">← Retry Authentication</a></p>
+        <div class="box">
+          <h1>❌ Authentication Failed</h1>
+          <p><strong>Error:</strong> ${errorMsg}</p>
+          <p>Check console logs on Render for details.</p>
+          <p><a href="/oauth/start">← Retry Login</a></p>
+        </div>
       </body>
       </html>
     `);
@@ -228,16 +238,16 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// Fallback for SPA routing
+// Fallback route (SPA support)
 app.get('/*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
+// Start server
 app.listen(PORT, () => {
   console.log('='.repeat(60));
   console.log('✅ FANVUE SERVER READY');
   console.log('='.repeat(60));
-  console.log(`Server running on port ${PORT}`);
   console.log(`Dashboard: https://fanvue-proxy2.onrender.com`);
   console.log(`OAuth Start: https://fanvue-proxy2.onrender.com/oauth/start`);
   console.log(`Redirect URI: https://fanvue-proxy2.onrender.com/oauth/callback`);
