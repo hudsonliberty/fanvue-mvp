@@ -10,16 +10,18 @@ const PORT = process.env.PORT || 10000;
 // Trust Render's proxy headers
 app.set('trust proxy', true);
 
-// TRIM ENVIRONMENT VARIABLES (CRITICAL FIX)
+// TRIM ENVIRONMENT VARIABLES (CRITICAL)
 const CLIENT_ID = (process.env.CLIENT_ID || '').trim();
 const CLIENT_SECRET = (process.env.CLIENT_SECRET || '').trim();
 
 console.log('='.repeat(60));
-console.log('ENVIRONMENT DEBUG');
+console.log('🚀 FANVUE SERVER STARTING');
 console.log('='.repeat(60));
-console.log(`CLIENT_ID length: ${CLIENT_ID.length}`);
-console.log(`CLIENT_SECRET length: ${CLIENT_SECRET.length}`);
-console.log(`Using Node version: ${process.version}`);
+console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+console.log(`Node version: ${process.version}`);
+console.log(`Client ID length: ${CLIENT_ID.length}`);
+console.log(`Client Secret length: ${CLIENT_SECRET.length}`);
+console.log(`Port: ${PORT}`);
 console.log('='.repeat(60));
 
 const sessions = new Map();
@@ -52,12 +54,12 @@ app.get('/oauth/start', (req, res) => {
   const redirectUri = `${req.protocol}://${req.get('host')}/oauth/callback`.trim();
 
   console.log('='.repeat(60));
-  console.log('AUTHORIZATION REQUEST');
+  console.log('🔗 AUTHORIZATION REQUEST');
   console.log('='.repeat(60));
-  console.log(`Host header: ${req.get('host')}`);
+  console.log(`Host: ${req.get('host')}`);
   console.log(`Protocol: ${req.protocol}`);
   console.log(`Redirect URI: [${redirectUri}]`);
-  console.log(`Redirect URI length: ${redirectUri.length}`);
+  console.log(`URI length: ${redirectUri.length}`);
   console.log('='.repeat(60));
 
   const authUrl = new URL('https://auth.fanvue.com/oauth2/auth');
@@ -77,11 +79,13 @@ app.get('/oauth/callback', async (req, res) => {
   const { code, state } = req.query;
 
   if (!code || !state) {
+    console.error('❌ Missing code or state parameter');
     return res.status(400).send('<h1>Missing code or state</h1><a href="/oauth/start">Retry</a>');
   }
 
   const session = sessions.get(state);
   if (!session) {
+    console.error('❌ Session not found for state:', state);
     return res.status(400).send('<h1>Invalid or expired state</h1><a href="/oauth/start">Restart</a>');
   }
 
@@ -92,17 +96,27 @@ app.get('/oauth/callback', async (req, res) => {
     const redirectUri = `${req.protocol}://${req.get('host')}/oauth/callback`.trim();
 
     console.log('='.repeat(60));
-    console.log('TOKEN EXCHANGE ATTEMPT');
+    console.log('🔑 TOKEN EXCHANGE ATTEMPT');
     console.log('='.repeat(60));
     console.log(`Redirect URI: [${redirectUri}]`);
-    console.log(`Client ID: ${CLIENT_ID}`);
+    console.log(`Client ID: ${CLIENT_ID.substring(0, 8)}...${CLIENT_ID.substring(CLIENT_ID.length - 4)}`);
     console.log(`Client Secret length: ${CLIENT_SECRET.length}`);
     
-    // DEBUG: Show Basic Auth header format
+    // CORRECT BASIC AUTH FORMATTING
     const basicAuth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-    console.log(`Basic Auth header: Basic ${basicAuth.substring(0, 15)}...${basicAuth.substring(basicAuth.length - 4)}`);
+    console.log(`Basic Auth header: Basic ${basicAuth.substring(0, 10)}...${basicAuth.substring(basicAuth.length - 4)}`);
+    
+    // DEBUG: Show exact request data
+    const requestData = {
+      grant_type: 'authorization_code',
+      code: code.substring(0, 10) + '...',
+      redirect_uri: redirectUri,
+      code_verifier: session.codeVerifier.substring(0, 10) + '...'
+    };
+    console.log('Request data:', requestData);
     console.log('='.repeat(60));
 
+    // CORRECTED REQUEST WITH ALL REQUIRED HEADERS
     const tokenResponse = await axios.post(
       'https://auth.fanvue.com/oauth2/token',
       new URLSearchParams({
@@ -110,24 +124,32 @@ app.get('/oauth/callback', async (req, res) => {
         code,
         redirect_uri: redirectUri,
         code_verifier: session.codeVerifier,
-      }).toString(),
+      }),
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${basicAuth}`,
+          'Authorization': `Basic ${basicAuth}`,
+          'Accept': 'application/json',
+          'User-Agent': 'Fanvue-API-Client/1.0'
         },
         timeout: 30000
       }
     );
 
-    const accessToken = tokenResponse.data.access_token;
     console.log('✅ Token exchange successful');
+    console.log('Access Token (first 20 chars):', tokenResponse.data.access_token.substring(0, 20) + '...');
 
     const apiHeaders = {
-      Authorization: `Bearer ${accessToken}`,
+      'Authorization': `Bearer ${tokenResponse.data.access_token}`,
       'X-Fanvue-API-Version': '2025-06-26',
+      'Accept': 'application/json',
+      'User-Agent': 'Fanvue-API-Client/1.0'
     };
 
+    console.log('='.repeat(60));
+    console.log('👤 FETCHING CREATOR PROFILE');
+    console.log('='.repeat(60));
+    
     const profileResponse = await axios.get('https://api.fanvue.com/users/me', {
       headers: apiHeaders,
     });
@@ -136,13 +158,22 @@ app.get('/oauth/callback', async (req, res) => {
     const creatorName = creatorData.displayName || creatorData.handle || 'Unknown Creator';
     const profilePic = creatorData.avatarUrl || '';
 
+    console.log(`✅ Creator Name: ${creatorName}`);
+    console.log(`✅ Profile Picture URL: ${profilePic ? profilePic.substring(0, 30) + '...' : 'Not found'}`);
+
+    console.log('='.repeat(60));
+    console.log('👥 FETCHING SUBSCRIBERS');
+    console.log('='.repeat(60));
+    
     const subscribersResponse = await axios.get('https://api.fanvue.com/v1/creator/subscribers', {
       params: { page: 1, size: 50 },
       headers: apiHeaders,
     });
 
     const subscribers = subscribersResponse.data.data || [];
+    console.log(`✅ Found ${subscribers.length} subscribers`);
 
+    // SUCCESS PAGE
     res.send(`
       <!DOCTYPE html>
       <html lang="en">
@@ -171,7 +202,7 @@ app.get('/oauth/callback', async (req, res) => {
         <div class="container">
           <div class="header">
             <h1>✅ Fanvue API Connected Successfully!</h1>
-            <p>Your authentication flow is now working on Render.</p>
+            <p>Authentication completed on Render deployment</p>
           </div>
 
           <div class="profile-section">
@@ -181,7 +212,7 @@ app.get('/oauth/callback', async (req, res) => {
             }
             <div class="info">
               <h1>${creatorName}</h1>
-              <p>Render Deployment Successful</p>
+              <p>Render Deployment Working</p>
             </div>
           </div>
 
@@ -203,9 +234,9 @@ app.get('/oauth/callback', async (req, res) => {
           <div class="raw">
             <h3>Debug Information</h3>
             <pre>
-Render URL: https://fanvue-proxy2.onrender.com
-Redirect URI used: ${redirectUri}
-Client ID length: ${CLIENT_ID.length}
+Server: https://fanvue-proxy2.onrender.com
+Node Version: ${process.version}
+Client ID: ${CLIENT_ID.substring(0, 8)}...${CLIENT_ID.substring(CLIENT_ID.length - 4)}
             </pre>
           </div>
 
@@ -218,35 +249,36 @@ Client ID length: ${CLIENT_ID.length}
     `);
   } catch (error) {
     console.error('='.repeat(60));
-    console.error('🔥 AUTHENTICATION FAILED - CRITICAL DEBUG INFO');
+    console.error('🔥 AUTHENTICATION FAILED');
     console.error('='.repeat(60));
     
     if (error.response) {
       console.error('❌ HTTP Status:', error.response.status);
-      console.error('❌ Error Response:', JSON.stringify(error.response.data, null, 2));
+      console.error('❌ Headers:', JSON.stringify(error.response.headers, null, 2));
+      console.error('❌ Response Data:', JSON.stringify(error.response.data, null, 2));
       
-      // SPECIAL DEBUG FOR INVALID_CLIENT
       if (error.response.data.error === 'invalid_client') {
         console.error('='.repeat(60));
-        console.error('🚨 INVALID_CLIENT ERROR - CHECK THESE ITEMS:');
+        console.error('🚨 CRITICAL INVALID_CLIENT ERROR');
         console.error('='.repeat(60));
-        console.error('1. REDIRECT URI MISMATCH:');
-        console.error(`   Current URI: https://${req.get('host')}/oauth/callback`);
-        console.error('   Must be EXACTLY: https://fanvue-proxy2.onrender.com/oauth/callback');
+        console.error('Most likely causes:');
+        console.error('1. Client ID/Secret mismatch in Render environment variables');
+        console.error('2. Redirect URI mismatch in Fanvue Developer Dashboard');
+        console.error('3. Extra whitespace in credentials');
         console.error('');
-        console.error('2. CLIENT CREDENTIALS:');
-        console.error(`   Client ID length: ${CLIENT_ID.length} characters`);
-        console.error(`   Client Secret length: ${CLIENT_SECRET.length} characters`);
-        console.error('   Check for whitespace in environment variables!');
-        console.error('');
-        console.error('3. FANVUE DASHBOARD CONFIGURATION:');
-        console.error('   Go to https://developers.fanvue.com');
-        console.error('   Verify Redirect URI is EXACTLY:');
+        console.error('✅ REQUIRED FIXES:');
+        console.error('1. In Render Dashboard, verify environment variables EXACTLY:');
+        console.error('   CLIENT_ID=3c1182f1-ef24-49e7-a819-2814d97b8cd7');
+        console.error('   CLIENT_SECRET=67b0174157d0faa5b51a5442556f66493e2d8f55e45c68c29e32c64a0162ba0d');
+        console.error('2. In Fanvue Dashboard, set Redirect URI EXACTLY to:');
         console.error('   https://fanvue-proxy2.onrender.com/oauth/callback');
         console.error('='.repeat(60));
       }
+    } else if (error.request) {
+      console.error('❌ No response received - network error');
+      console.error('❌ Request config:', JSON.stringify(error.config, null, 2));
     } else {
-      console.error('❌ Network Error:', error.message);
+      console.error('❌ Error details:', error.message);
     }
 
     res.status(500).send(`
@@ -274,8 +306,8 @@ Client ID length: ${CLIENT_ID.length}
 
           <div class="debug">
             <h2>🔍 Current Configuration</h2>
-            <p><strong>Render URL:</strong> https://fanvue-proxy2.onrender.com</p>
-            <p><strong>Redirect URI being used:</strong> <code>https://${req.get('host')}/oauth/callback</code></p>
+            <p><strong>Server URL:</strong> https://fanvue-proxy2.onrender.com</p>
+            <p><strong>Redirect URI:</strong> <code>https://${req.get('host')}/oauth/callback</code></p>
             <p><strong>Client ID length:</strong> ${CLIENT_ID.length} characters</p>
           </div>
 
@@ -287,17 +319,13 @@ Client ID length: ${CLIENT_ID.length}
               <code>https://fanvue-proxy2.onrender.com/oauth/callback</code></li>
               
               <li><strong>Verify Render Environment Variables:</strong><br>
-              In Render dashboard, check for whitespace in:<br>
-              <code>CLIENT_ID</code> and <code>CLIENT_SECRET</code></li>
+              In Render dashboard, check these EXACT values:<br>
+              <code>CLIENT_ID=3c1182f1-ef24-49e7-a819-2814d97b8cd7</code><br>
+              <code>CLIENT_SECRET=67b0174157d0faa5b51a5442556f66493e2d8f55e45c68c29e32c64a0162ba0d</code></li>
               
               <li><strong>Clear Browser Cookies:</strong><br>
               Clear cookies for <code>fanvue-proxy2.onrender.com</code> before retrying</li>
             </ol>
-          </div>
-
-          <div class="debug">
-            <h2>📋 Full Error Details</h2>
-            <pre>${JSON.stringify(error.response?.data || {message: error.message}, null, 2)}</pre>
           </div>
 
           <p style="text-align: center; margin-top: 30px;">
@@ -312,20 +340,27 @@ Client ID length: ${CLIENT_ID.length}
   }
 });
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
-app.get('/*anything', (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+app.get('/*anything', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
 
 app.listen(PORT, () => {
   console.log('='.repeat(60));
-  console.log('🚀 FANVUE SERVER READY FOR RENDER');
+  console.log('✅ FANVUE SERVER READY');
   console.log('='.repeat(60));
   console.log(`Server running on port ${PORT}`);
-  console.log(`✅ CORRECT REDIRECT URI FOR FANVUE DASHBOARD:`);
+  console.log(`✅ Production URL: https://fanvue-proxy2.onrender.com`);
+  console.log(`✅ OAuth URL: https://fanvue-proxy2.onrender.com/oauth/start`);
+  console.log(`✅ CORRECT Redirect URI for Fanvue Dashboard:`);
   console.log(`https://fanvue-proxy2.onrender.com/oauth/callback`);
   console.log('='.repeat(60));
-  console.log('🔧 DEPLOYMENT CHECKLIST:');
-  console.log('1. Set environment variables in Render dashboard (no whitespace!)');
-  console.log('2. Update Fanvue Redirect URI to EXACT URL above');
+  console.log('🔧 REMEMBER TO:');
+  console.log('1. Set environment variables in Render dashboard EXACTLY as shown above');
+  console.log('2. Update Fanvue Developer Dashboard with the exact Redirect URI');
   console.log('3. Clear browser cookies before testing');
   console.log('='.repeat(60));
 });
