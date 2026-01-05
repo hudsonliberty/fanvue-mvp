@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>MidKnight VIP Services — Phase 1 MVP</title>
+  <title>MidKnight VIP Services — MVP</title>
   <style>
     :root { color-scheme: dark; }
     body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#0b0b10; color:#e9e9f1; }
-    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 16px 64px; }
-    .top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 18px; flex-wrap:wrap; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 22px 14px 64px; }
+    .top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom: 14px; }
     .brand { display:flex; align-items:center; gap:12px; }
     .logo { width:44px; height:44px; border-radius:12px; background:linear-gradient(135deg,#ff2d8d,#7c3aed); display:grid; place-items:center; font-weight:800; color:#fff; font-size:18px; }
     .muted { color:#a7a7bd; font-size: 13px; }
@@ -16,26 +16,34 @@
     .grid { display:grid; gap:14px; grid-template-columns: 1.1fr 0.9fr; }
     @media (max-width: 980px){ .grid { grid-template-columns: 1fr; } }
     .card { border:1px solid #232338; background:#10101a; border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:12px; }
-    .card h2 { margin: 0; font-size: 14px; letter-spacing: .2px; text-transform:uppercase; color:#7c7c98; font-weight:700; }
+    .card h2 { margin: 0; font-size: 13px; letter-spacing: .2px; text-transform:uppercase; color:#7c7c98; font-weight:800; }
     .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-    .btn { cursor:pointer; border:1px solid #2a2a43; background:#171724; color:#e9e9f1; border-radius:10px; padding:8px 12px; font-weight:600; font-size:13px; }
-    .btn.primary { border-color:#6d28d9; background:linear-gradient(135deg,#6d28d9,#ff2d8d); color:white; text-decoration:none; display:inline-block; text-align:center; }
+    .btn { cursor:pointer; border:1px solid #2a2a43; background:#171724; color:#e9e9f1; border-radius:10px; padding:9px 12px; font-weight:700; font-size:13px; }
+    .btn.primary { border-color:#6d28d9; background:linear-gradient(135deg,#6d28d9,#ff2d8d); color:white; }
     .btn.danger { border-color:#b91c1c; background:#1a0f13; color:#ffd7d7; }
-    .select { appearance:none; background:#0c0c13; border:1px solid #2a2a43; color:#e9e9f1; padding:6px 12px; border-radius:8px; font-size:13px; }
     .table { width:100%; border-collapse: collapse; }
     .table th, .table td { border-bottom:1px solid #202033; padding:10px 8px; text-align:left; font-size:13px; }
-    .table th { color:#bdbde0; font-weight:700; font-size:11px; text-transform: uppercase; }
+    .table th { color:#bdbde0; font-weight:900; font-size:11px; text-transform: uppercase; }
     .status { display:flex; align-items:center; gap:8px; }
     .dot { width:8px; height:8px; border-radius:999px; background:#444; }
     .dot.ok { background:#22c55e; }
     .dot.warn { background:#f59e0b; }
     .mono { font-family: ui-monospace, monospace; font-size:12px; }
-    .textarea { width:100%; min-height: 100px; border-radius: 12px; border:1px solid #26263a; background:#0c0c13; color:#e9e9f1; padding:12px; font-family: ui-monospace, monospace; font-size:12px; }
+    .textarea { width:100%; min-height: 160px; border-radius: 12px; border:1px solid #26263a; background:#0c0c13; color:#e9e9f1; padding:12px; font-family: ui-monospace, monospace; font-size:12px; }
     .hr { height:1px; background:#1f1f31; margin: 4px 0; border:0; width:100%; }
 
-    .profile { display:flex; align-items:center; gap:12px; margin-left:16px; }
-    .avatar { width:36px; height:36px; border-radius:50%; background:#2a2a43; object-fit:cover; }
-    .auth-section { display:flex; align-items:center; gap:12px; }
+    .profileBar { display:flex; align-items:center; gap:10px; margin-top:10px; }
+    .avatar { width:44px; height:44px; border-radius:50%; object-fit:cover; background:#2a2a43; border:1px solid #2a2a43; }
+    .who { display:flex; flex-direction:column; gap:2px; }
+    .who b { font-size:14px; }
+    .who span { color:#a7a7bd; font-size:12px; }
+    .rightTop { display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
+
+    .mini { font-size: 12px; color:#a7a7bd; }
+    .kv { display:flex; gap:10px; flex-wrap:wrap; }
+    .kv .box { border:1px solid #232338; background:#0c0c13; border-radius:12px; padding:10px; min-width: 180px; }
+    .kv .box .k { color:#a7a7bd; font-size:11px; text-transform:uppercase; font-weight:900; letter-spacing:.4px; }
+    .kv .box .v { margin-top:6px; font-weight:800; }
   </style>
 </head>
 
@@ -43,210 +51,325 @@
 <div class="wrap">
 
   <div class="top">
-    <div class="brand">
-      <div class="logo">MV</div>
-      <div>
-        <div style="font-weight:900;">MidKnight VIP Services</div>
-        <div class="muted">Phase 1: Live Fanvue Control</div>
-      </div>
-      <span class="pill">MVP LIVE</span>
-    </div>
-
-    <div id="authContainer" class="auth-section">
-      <div id="profileSection" style="display:none;" class="profile">
-        <img id="avatarImg" class="avatar"
-             src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%234a4a6a' d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E"
-             alt="Profile">
+    <div>
+      <div class="brand">
+        <div class="logo">MV</div>
         <div>
-          <div id="usernameDisplay" style="font-weight:700;"></div>
-          <div id="handleDisplay" class="muted" style="font-size:12px;"></div>
+          <div style="font-weight:950;font-size:18px;">MidKnight VIP Services</div>
+          <div class="muted">Phase 1: Live Fanvue Control</div>
         </div>
       </div>
 
-      <button id="loginBtn" class="btn primary">Start OAuth Login</button>
-      <button id="logoutBtn" class="btn danger" style="display:none;">Logout</button>
+      <div id="creatorRow" class="profileBar" style="display:none;">
+        <img id="creatorAvatar" class="avatar" alt="creator" />
+        <div class="who">
+          <b id="creatorName"></b>
+          <span id="creatorHandle"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rightTop">
+      <span class="pill">MVP LIVE</span>
+      <div class="row">
+        <button class="btn primary" id="btnLogin">Start OAuth Login</button>
+        <button class="btn danger" id="btnLogout" style="display:none;">Logout</button>
+      </div>
     </div>
   </div>
 
   <div class="grid">
-
     <div class="card">
       <h2>Operations Console</h2>
 
       <div class="row">
         <button class="btn primary" id="btnEnable">Enable Auto-Reply</button>
         <button class="btn danger" id="btnKill">Kill Switch</button>
+        <button class="btn" id="btnRefresh">Refresh Status</button>
       </div>
 
       <hr class="hr"/>
 
       <table class="table">
         <tr><th>Component</th><th>Status</th></tr>
-        <tr><td>Auth Token</td><td class="status"><span id="dotToken" class="dot warn"></span><b id="txtToken">Missing</b></td></tr>
-        <tr><td>Reply Engine</td><td class="status"><span id="dotReply" class="dot warn"></span><b id="txtReply">Standby</b></td></tr>
+        <tr>
+          <td>Auth Token</td>
+          <td class="status"><span id="dotToken" class="dot warn"></span><b id="txtToken">Missing</b></td>
+        </tr>
+        <tr>
+          <td>Webhook</td>
+          <td class="status"><span id="dotWebhook" class="dot warn"></span><b id="txtWebhook">Idle</b></td>
+        </tr>
+        <tr>
+          <td>Reply Engine</td>
+          <td class="status"><span id="dotReply" class="dot"></span><b id="txtReply">Standby</b></td>
+        </tr>
       </table>
 
       <hr class="hr"/>
 
-      <h2>Webhook Payload</h2>
+      <h2>Latest Webhook</h2>
+
+      <div class="kv">
+        <div class="box">
+          <div class="k">Sender</div>
+          <div class="v" id="wbSender">—</div>
+          <div class="mini" id="wbHandle"></div>
+        </div>
+        <div class="box">
+          <div class="k">Message UUID</div>
+          <div class="v mono" id="wbMsg">—</div>
+        </div>
+        <div class="box">
+          <div class="k">Received</div>
+          <div class="v mono" id="wbTime">—</div>
+        </div>
+      </div>
+
       <textarea class="textarea" id="payloadBox" readonly>// No webhook received yet</textarea>
     </div>
 
     <div class="card">
       <h2>Reply Generator</h2>
 
-      <select id="personaSelect" class="select">
-        <option value="sweet">Sweet</option>
-        <option value="flirty" selected>Flirty</option>
-        <option value="dominant">Dominant</option>
-      </select>
+      <div class="row">
+        <button class="btn" data-persona="sweet">Sweet</button>
+        <button class="btn" data-persona="flirty">Flirty</button>
+        <button class="btn" data-persona="dominant">Dominant</button>
+      </div>
 
-      <select id="goalSelect" class="select">
-        <option value="sub">Subscription</option>
-        <option value="tip">Tip</option>
-        <option value="ppv" selected>PPV</option>
-      </select>
+      <div class="row">
+        <button class="btn" data-goal="sub">Subscription</button>
+        <button class="btn" data-goal="tip">Tip</button>
+        <button class="btn" data-goal="ppv">PPV</button>
+      </div>
+
+      <div class="row">
+        <button class="btn primary" id="btnGen">Generate Reply</button>
+      </div>
 
       <hr class="hr"/>
 
       <h2>Generated Reply</h2>
-      <textarea class="textarea" id="replyTemplate" readonly>// Select persona and goal to generate reply</textarea>
+      <textarea class="textarea" id="replyBox" readonly>// Select persona and goal, then Generate</textarea>
 
       <h2>Activity Log</h2>
-      <div id="activity" class="mono" style="max-height:150px; overflow-y:auto;"></div>
+      <div id="activity" class="mono" style="max-height:170px; overflow-y:auto;"></div>
     </div>
-
   </div>
+
 </div>
 
 <script>
-  const logBox = document.getElementById('activity');
-  const payloadBox = document.getElementById('payloadBox');
-  const dotToken = document.getElementById('dotToken');
-  const txtToken = document.getElementById('txtToken');
-  const dotReply = document.getElementById('dotReply');
-  const txtReply = document.getElementById('txtReply');
+const logBox = document.getElementById("activity");
 
-  const loginBtn = document.getElementById('loginBtn');
-  const logoutBtn = document.getElementById('logoutBtn');
-  const profileSection = document.getElementById('profileSection');
-  const avatarImg = document.getElementById('avatarImg');
-  const usernameDisplay = document.getElementById('usernameDisplay');
-  const handleDisplay = document.getElementById('handleDisplay');
+const dotToken = document.getElementById("dotToken");
+const txtToken = document.getElementById("txtToken");
 
-  let state = { token:false, replies:false, profile:null };
+const dotWebhook = document.getElementById("dotWebhook");
+const txtWebhook = document.getElementById("txtWebhook");
 
-  document.addEventListener('DOMContentLoaded', () => {
-    checkAuthStatus();
-    setInterval(checkAuthStatus, 5000);
+const dotReply = document.getElementById("dotReply");
+const txtReply = document.getElementById("txtReply");
 
-    loginBtn.addEventListener('click', () => window.location.href = '/oauth/start');
-    logoutBtn.addEventListener('click', logout);
-    document.getElementById('btnEnable').addEventListener('click', enableAutoReply);
-    document.getElementById('btnKill').addEventListener('click', killSwitch);
+const payloadBox = document.getElementById("payloadBox");
 
-    updateUI();
-  });
+const creatorRow = document.getElementById("creatorRow");
+const creatorAvatar = document.getElementById("creatorAvatar");
+const creatorName = document.getElementById("creatorName");
+const creatorHandle = document.getElementById("creatorHandle");
 
-  function log(msg){
-    const now = new Date().toLocaleTimeString();
-    logBox.innerHTML = `<div>[${now}] ${msg}</div>` + logBox.innerHTML;
+const btnLogin = document.getElementById("btnLogin");
+const btnLogout = document.getElementById("btnLogout");
+
+const wbSender = document.getElementById("wbSender");
+const wbHandle = document.getElementById("wbHandle");
+const wbMsg = document.getElementById("wbMsg");
+const wbTime = document.getElementById("wbTime");
+
+const replyBox = document.getElementById("replyBox");
+
+let state = {
+  authed: false,
+  replies: false,
+  persona: "flirty",
+  goal: "ppv",
+  lastWebhookAt: 0
+};
+
+function log(msg){
+  const now = new Date().toLocaleTimeString();
+  logBox.innerHTML = `<div>[${now}] ${msg}</div>` + logBox.innerHTML;
+}
+
+function setDot(dotEl, mode){
+  dotEl.className = "dot" + (mode === "ok" ? " ok" : mode === "warn" ? " warn" : "");
+}
+
+function updateUI(){
+  if(state.authed){
+    setDot(dotToken, "ok");
+    txtToken.textContent = "Active";
+    btnLogin.style.display = "none";
+    btnLogout.style.display = "inline-block";
+  } else {
+    setDot(dotToken, "warn");
+    txtToken.textContent = "Missing";
+    btnLogin.style.display = "inline-block";
+    btnLogout.style.display = "none";
+    creatorRow.style.display = "none";
   }
 
-  function updateUI(){
-    if(state.token){
-      dotToken.className='dot ok';
-      txtToken.textContent='Active';
-    } else {
-      dotToken.className='dot warn';
-      txtToken.textContent='Missing';
-    }
-
-    if(state.replies){
-      dotReply.className='dot ok';
-      txtReply.textContent='Running';
-    } else {
-      dotReply.className='dot';
-      txtReply.textContent='Standby';
-    }
-
-    if(state.profile){
-      profileSection.style.display='flex';
-      loginBtn.style.display='none';
-      logoutBtn.style.display='inline-block';
-    } else {
-      profileSection.style.display='none';
-      loginBtn.style.display='inline-block';
-      logoutBtn.style.display='none';
-    }
+  if(state.replies){
+    setDot(dotReply, "ok");
+    txtReply.textContent = "Running";
+  } else {
+    setDot(dotReply, "");
+    txtReply.textContent = "Standby";
   }
+}
 
-  async function checkAuthStatus() {
-    try {
-      const response = await fetch('/api/me', { credentials: 'include' });
-
-      if (response.ok) {
-        const profile = await response.json();
-
-        state.token = true;
-        state.profile = profile;
-
-        const username =
-          profile.username || profile.handle || profile.name || profile.displayName || 'Connected';
-
-        const handle =
-          profile.handle
-            ? (String(profile.handle).startsWith('@') ? profile.handle : '@' + profile.handle)
-            : (profile.username ? ('@' + profile.username) : '');
-
-        usernameDisplay.textContent = username;
-        handleDisplay.textContent = handle;
-
-        const avatar =
-          profile.avatar_url || profile.avatarUrl || profile.avatar || profile.photo_url || profile.photoUrl;
-
-        if (avatar) avatarImg.src = avatar;
-
-      } else {
-        state.token = false;
-        state.profile = null;
-      }
-
+async function checkMe(){
+  try {
+    const r = await fetch("/api/me", { cache: "no-store" });
+    if(!r.ok) {
+      state.authed = false;
       updateUI();
-    } catch (error) {
-      state.token = false;
-      state.profile = null;
-      updateUI();
-    }
-  }
-
-  async function logout() {
-    try {
-      await fetch('/api/logout', { method:'POST', credentials:'include' });
-    } finally {
-      state.token = false;
-      state.profile = null;
-      updateUI();
-      log('✅ Logged out');
-    }
-  }
-
-  function enableAutoReply() {
-    if(!state.token){
-      log('❌ Cannot enable: No valid token');
       return;
     }
-    state.replies = true;
-    log('✅ Auto-reply engine enabled');
+    const me = await r.json();
+    state.authed = true;
+
+    creatorRow.style.display = "flex";
+    creatorName.textContent = me.username || "Creator";
+    creatorHandle.textContent = me.handle || "";
+    creatorAvatar.src = me.avatar_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%234a4a6a' d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
+
     updateUI();
+  } catch (e) {
+    state.authed = false;
+    updateUI();
+  }
+}
+
+function renderWebhook(evt){
+  if(!evt){
+    setDot(dotWebhook, "warn");
+    txtWebhook.textContent = "Idle";
+    wbSender.textContent = "—";
+    wbHandle.textContent = "";
+    wbMsg.textContent = "—";
+    wbTime.textContent = "—";
+    payloadBox.value = "// No webhook received yet";
+    return;
   }
 
-  function killSwitch() {
-    state.replies = false;
-    log('🚨 Kill switch activated - All operations paused');
-    updateUI();
+  setDot(dotWebhook, "ok");
+  txtWebhook.textContent = "Live";
+
+  const n = evt.normalized || {};
+  wbSender.textContent = n.senderName || "Unknown";
+  wbHandle.textContent = n.senderHandle || "";
+  wbMsg.textContent = n.messageUuid || "—";
+  wbTime.textContent = evt.receivedAt || "—";
+
+  payloadBox.value = JSON.stringify(evt.body || evt, null, 2);
+}
+
+async function pollWebhooks(){
+  if(!state.authed){
+    renderWebhook(null);
+    return;
   }
+
+  try {
+    const r = await fetch("/api/events/last", { cache: "no-store" });
+    if(!r.ok){
+      // if auth expired, /api/events/last returns 401
+      renderWebhook(null);
+      return;
+    }
+    const evt = await r.json();
+    renderWebhook(evt);
+  } catch (e){
+    // keep last UI
+  }
+}
+
+function startOAuth(){
+  window.location.href = "/oauth/start";
+}
+
+async function logout(){
+  try{
+    await fetch("/api/logout", { method:"POST" });
+    state.authed = false;
+    renderWebhook(null);
+    log("✅ Logged out");
+    updateUI();
+  }catch(e){
+    log("❌ Logout failed");
+  }
+}
+
+function enableAutoReply(){
+  if(!state.authed){ log("❌ Login first"); return; }
+  state.replies = true;
+  log("✅ Auto-reply enabled (engine wiring next)");
+  updateUI();
+}
+
+function killSwitch(){
+  state.replies = false;
+  log("🚨 Kill switch ON");
+  updateUI();
+}
+
+function generateReply(){
+  // For now: template-based (no OpenAI required). We’ll wire real Fanvue send next.
+  const p = state.persona;
+  const g = state.goal;
+
+  const lines = [];
+
+  if(p === "sweet") lines.push("Hey love 💗");
+  if(p === "flirty") lines.push("Hey 😈");
+  if(p === "dominant") lines.push("Hey. Come closer. 😏");
+
+  if(g === "sub") lines.push("Subscribe so we can talk properly in here.");
+  if(g === "tip") lines.push("If you want my attention right now, a tip gets priority.");
+  if(g === "ppv") lines.push("I’ve got something exclusive for you… want the unlock?");
+
+  replyBox.value = lines.join("\n\n");
+  log("✨ Reply generated");
+}
+
+document.addEventListener("click", (e) => {
+  const persona = e.target.getAttribute("data-persona");
+  const goal = e.target.getAttribute("data-goal");
+  if(persona){ state.persona = persona; log("Persona: " + persona); }
+  if(goal){ state.goal = goal; log("Goal: " + goal); }
+});
+
+document.getElementById("btnRefresh").addEventListener("click", async () => {
+  await checkMe();
+  await pollWebhooks();
+  log("🔄 Refreshed");
+});
+
+btnLogin.addEventListener("click", startOAuth);
+btnLogout.addEventListener("click", logout);
+document.getElementById("btnEnable").addEventListener("click", enableAutoReply);
+document.getElementById("btnKill").addEventListener("click", killSwitch);
+document.getElementById("btnGen").addEventListener("click", generateReply);
+
+// Boot
+(async function init(){
+  await checkMe();
+  await pollWebhooks();
+  setInterval(checkMe, 6000);
+  setInterval(pollWebhooks, 3000);
+})();
 </script>
-
 </body>
 </html>
