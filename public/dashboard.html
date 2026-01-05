@@ -8,21 +8,45 @@
     :root { color-scheme: dark; }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#0b0b10; color:#e9e9f1; }
     .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 16px 64px; }
-    .top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
     .brand { display:flex; align-items:center; gap:12px; }
     .logo { width:44px; height:44px; border-radius:12px; background:linear-gradient(135deg,#ff2d8d,#7c3aed); display:grid; place-items:center; font-weight:800; }
-    .profile { display:flex; align-items:center; gap:12px; }
-    .avatar { width:36px; height:36px; border-radius:50%; object-fit:cover; background:#2a2a43; }
+    .muted { color:#a7a7bd; font-size:12px; }
     .grid { display:grid; gap:14px; grid-template-columns: 1.1fr 0.9fr; margin-top:18px; }
     @media (max-width:900px){ .grid { grid-template-columns: 1fr; } }
     .card { border:1px solid #232338; background:#10101a; border-radius:16px; padding:16px; }
-    h2 { font-size:13px; text-transform:uppercase; color:#7c7c98; margin:0 0 8px; }
-    .btn { cursor:pointer; border:1px solid #2a2a43; background:#171724; color:#e9e9f1; border-radius:10px; padding:8px 12px; font-weight:600; }
+    h2 { font-size:13px; text-transform:uppercase; color:#7c7c98; margin:0 0 10px; }
+    .btn { cursor:pointer; border:1px solid #2a2a43; background:#171724; color:#e9e9f1; border-radius:10px; padding:10px 12px; font-weight:700; }
     .btn.primary { background:linear-gradient(135deg,#6d28d9,#ff2d8d); border:0; }
     .btn.danger { background:#2a0f14; border-color:#b91c1c; color:#ffb4b4; }
-    .textarea { width:100%; min-height:120px; border-radius:12px; border:1px solid #26263a; background:#0c0c13; color:#e9e9f1; padding:12px; font-family: ui-monospace, monospace; }
-    .muted { color:#a7a7bd; font-size:12px; }
-    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .textarea { width:100%; min-height:140px; border-radius:12px; border:1px solid #26263a; background:#0c0c13; color:#e9e9f1; padding:12px; font-family: ui-monospace, monospace; font-size:13px; box-sizing:border-box; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .pillRow { display:flex; gap:10px; flex-wrap:wrap; }
+    .pill {
+      cursor:pointer;
+      user-select:none;
+      border:1px solid #2a2a43;
+      background:#0c0c13;
+      padding:10px 12px;
+      border-radius:12px;
+      font-weight:800;
+      font-size:13px;
+      min-width:110px;
+      text-align:center;
+      opacity:.92;
+    }
+    .pill.active{
+      border-color:#7c3aed;
+      box-shadow:0 0 0 2px rgba(124,58,237,.25) inset;
+      background:linear-gradient(135deg, rgba(109,40,217,.25), rgba(255,45,141,.12));
+    }
+    .profile { display:flex; align-items:center; gap:12px; }
+    .avatar { width:36px; height:36px; border-radius:50%; object-fit:cover; background:#2a2a43; }
+    .statusLine { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; }
+    .dot { width:8px; height:8px; border-radius:999px; background:#444; display:inline-block; margin-right:8px; }
+    .dot.ok { background:#22c55e; }
+    .dot.warn { background:#f59e0b; }
+    .mono { font-family: ui-monospace, monospace; font-size:12px; }
   </style>
 </head>
 
@@ -34,42 +58,70 @@
     <div class="brand">
       <div class="logo">MV</div>
       <div>
-        <div style="font-weight:800;">MidKnight VIP Services</div>
+        <div style="font-weight:900;">MidKnight VIP Services</div>
         <div class="muted">Fanvue Monetization Console</div>
       </div>
     </div>
 
-    <div class="profile" id="profileBox" style="display:none;">
-      <img id="avatar" class="avatar">
-      <div>
-        <div id="username"></div>
-        <div id="handle" class="muted"></div>
+    <div class="row">
+      <div class="profile" id="profileBox" style="display:none;">
+        <img id="avatar" class="avatar" alt="">
+        <div>
+          <div id="username" style="font-weight:800;"></div>
+          <div id="handle" class="muted"></div>
+        </div>
+        <button class="btn danger" id="logoutBtn">Logout</button>
       </div>
-      <button class="btn danger" id="logoutBtn">Logout</button>
-    </div>
 
-    <button class="btn primary" id="loginBtn">Login</button>
+      <button class="btn primary" id="loginBtn">Login</button>
+    </div>
   </div>
 
-  <!-- MAIN -->
   <div class="grid">
 
-    <!-- LEFT -->
+    <!-- LEFT: WEBHOOK -->
     <div class="card">
       <h2>Webhook Payload</h2>
       <textarea id="payloadBox" class="textarea" readonly>// waiting for fan message…</textarea>
+
+      <div class="statusLine">
+        <div class="mono" id="webhookStatus"><span class="dot warn"></span>Webhook: waiting</div>
+        <button class="btn" id="refreshBtn">Refresh</button>
+      </div>
     </div>
 
-    <!-- RIGHT -->
+    <!-- RIGHT: REPLY -->
     <div class="card">
-      <h2>Generated Reply</h2>
-      <textarea id="replyTemplate" class="textarea">
-Hey 😘 I saw your message… I’ve got something special for you tonight.
-      </textarea>
+      <h2>Reply Controls</h2>
 
-      <div class="row" style="margin-top:8px;">
-        <button class="btn primary" id="copyReplyBtn">Copy Reply</button>
+      <div class="muted" style="margin-bottom:6px;">Style</div>
+      <div class="pillRow" id="styleRow">
+        <div class="pill active" data-style="sweet">Sweet</div>
+        <div class="pill" data-style="flirty">Flirty</div>
+        <div class="pill" data-style="dominant">Dominant</div>
+      </div>
+
+      <div class="muted" style="margin:12px 0 6px;">Goal</div>
+      <div class="pillRow" id="goalRow">
+        <div class="pill" data-goal="sub">Sub</div>
+        <div class="pill" data-goal="tip">Tip</div>
+        <div class="pill active" data-goal="ppv">PPV</div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <button class="btn primary" id="generateBtn">Generate Reply</button>
+        <button class="btn" id="copyReplyBtn">Copy Reply</button>
         <span id="copyStatus" class="muted"></span>
+      </div>
+
+      <div style="margin-top:12px;">
+        <h2>Generated Reply</h2>
+        <textarea id="replyTemplate" class="textarea"></textarea>
+      </div>
+
+      <div style="margin-top:10px;">
+        <h2>Activity</h2>
+        <div id="logBox" class="mono"></div>
       </div>
     </div>
 
@@ -85,11 +137,26 @@ const username = document.getElementById('username');
 const handle = document.getElementById('handle');
 
 const payloadBox = document.getElementById('payloadBox');
+const webhookStatus = document.getElementById('webhookStatus');
+const refreshBtn = document.getElementById('refreshBtn');
+
+const styleRow = document.getElementById('styleRow');
+const goalRow = document.getElementById('goalRow');
+const generateBtn = document.getElementById('generateBtn');
 const replyBox = document.getElementById('replyTemplate');
+
 const copyBtn = document.getElementById('copyReplyBtn');
 const copyStatus = document.getElementById('copyStatus');
+const logBox = document.getElementById('logBox');
 
-/* AUTH */
+let currentStyle = 'sweet';
+let currentGoal = 'ppv';
+
+function log(msg){
+  const now = new Date().toLocaleTimeString();
+  logBox.innerHTML = `<div>[${now}] ${msg}</div>` + logBox.innerHTML;
+}
+
 loginBtn.onclick = () => location.href = '/oauth/start';
 logoutBtn.onclick = async () => {
   await fetch('/api/logout', { method:'POST' });
@@ -104,29 +171,91 @@ async function loadProfile(){
     profileBox.style.display='flex';
     loginBtn.style.display='none';
     avatar.src = me.avatar_url || '';
-    username.textContent = me.username;
-    handle.textContent = me.handle;
+    username.textContent = me.username || '';
+    handle.textContent = me.handle || '';
   } catch {}
 }
 loadProfile();
 
-/* WEBHOOK POLL */
+/* Controls */
+function setActivePills(container, attr, value){
+  container.querySelectorAll('.pill').forEach(p => {
+    const v = p.getAttribute(attr);
+    p.classList.toggle('active', v === value);
+  });
+}
+
+styleRow.addEventListener('click', (e) => {
+  const pill = e.target.closest('.pill');
+  if(!pill) return;
+  currentStyle = pill.dataset.style;
+  setActivePills(styleRow, 'data-style', currentStyle);
+  log(`Style set: ${currentStyle}`);
+});
+
+goalRow.addEventListener('click', (e) => {
+  const pill = e.target.closest('.pill');
+  if(!pill) return;
+  currentGoal = pill.dataset.goal;
+  setActivePills(goalRow, 'data-goal', currentGoal);
+  log(`Goal set: ${currentGoal}`);
+});
+
+/* Webhook polling */
 async function pollWebhook(){
   try {
     const r = await fetch('/api/events');
-    if(!r.ok) return;
+    if(!r.ok){
+      webhookStatus.innerHTML = `<span class="dot warn"></span>Webhook: not authenticated`;
+      return;
+    }
     const j = await r.json();
     if(j.events?.length){
       payloadBox.value = JSON.stringify(j.events[0].body, null, 2);
+      webhookStatus.innerHTML = `<span class="dot ok"></span>Webhook: received (${j.count})`;
+    } else {
+      webhookStatus.innerHTML = `<span class="dot warn"></span>Webhook: waiting`;
     }
-  } catch {}
+  } catch {
+    webhookStatus.innerHTML = `<span class="dot warn"></span>Webhook: error`;
+  }
 }
+
+refreshBtn.onclick = pollWebhook;
 setInterval(pollWebhook, 1500);
 pollWebhook();
 
-/* COPY BUTTON */
+/* Reply generator (local templates for now) */
+function buildReply(style, goal){
+  const bank = {
+    sweet: {
+      sub: "Hey ❤️ I love seeing you here. Subscribe so we can actually chat 1:1 like we should.",
+      tip: "Hey love ❤️ If you want me focused on you right now… a tip gets my attention fast.",
+      ppv: "Hey ❤️ I made something special for you. Want the private version? 👀"
+    },
+    flirty: {
+      sub: "Hey 😘 You’re gonna have to subscribe if you want me in your DMs like that.",
+      tip: "Hey 😈 If you want my attention right now… tips get priority.",
+      ppv: "Hey 😏 I’ve got something special for you tonight… want the locked version?"
+    },
+    dominant: {
+      sub: "You want access? Subscribe. Then you can talk to me properly.",
+      tip: "If you want my time right now, tip. That’s how you get moved to the front.",
+      ppv: "I made something you’re going to want. Unlock it and behave."
+    }
+  };
+  return bank?.[style]?.[goal] || "Hey 👋";
+}
+
+generateBtn.onclick = () => {
+  const text = buildReply(currentStyle, currentGoal);
+  replyBox.value = text;
+  log(`✨ Reply generated (${currentStyle}/${currentGoal})`);
+};
+
+/* Copy */
 copyBtn.onclick = async () => {
-  const text = replyBox.value.trim();
+  const text = (replyBox.value || '').trim();
   if(!text){
     copyStatus.textContent='Nothing to copy';
     return;
@@ -134,11 +263,15 @@ copyBtn.onclick = async () => {
   try{
     await navigator.clipboard.writeText(text);
     copyStatus.textContent='Copied ✓';
+    log('📋 Reply copied');
     setTimeout(()=>copyStatus.textContent='',1500);
   }catch{
     copyStatus.textContent='Copy failed';
   }
 };
+
+/* Init defaults */
+replyBox.value = buildReply(currentStyle, currentGoal);
 </script>
 </body>
 </html>
