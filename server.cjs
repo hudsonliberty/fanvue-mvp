@@ -1,254 +1,362 @@
-// server.cjs - Production Fanvue OAuth Server (Fixed for Render Deployment)
+// server.cjs - Production Fanvue OAuth Server (Render)
 
-require('dotenv').config();
+// env
+require("dotenv").config();
 
-const express = require('express');
-const axios = require('axios');
-const crypto = require('crypto');
-const path = require('path');
+const express = require("express");
+const axios = require("axios");
+const crypto = require("crypto");
+const path = require("path");
+const cookieParser = require("cookie-parser");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Trust proxy for Render (ensures req.protocol and req.get('host') are correct)
-app.set('trust proxy', true);
+// Trust proxy for Render
+app.set("trust proxy", true);
 
-// Load credentials from Render environment variables
-const CLIENT_ID = (process.env.CLIENT_ID || '').trim();
-const CLIENT_SECRET = (process.env.CLIENT_SECRET || '').trim();
+// ENV
+const CLIENT_ID = (process.env.CLIENT_ID || "").trim();
+const CLIENT_SECRET = (process.env.CLIENT_SECRET || "").trim();
+const SESSION_COOKIE_NAME = (process.env.SESSION_COOKIE_NAME || "fanvue_oauth").trim();
+const SESSION_SECRET = (process.env.SESSION_SECRET || "change_me").trim();
 
-// Startup checks
-console.log('='.repeat(60));
-console.log('FANVUE SERVER STARTING');
-console.log('='.repeat(60));
-console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+// Fanvue constants (your current working endpoints)
+const FANVUE_AUTH_URL = "https://auth.fanvue.com/oauth2/auth";
+const FANVUE_TOKEN_URL = "https://auth.fanvue.com/oauth2/token";
+const FANVUE_API_ME_URL = "https://api.fanvue.com/users/me";
+const FANVUE_API_SUBSCRIBERS_URL = "https://api.fanvue.com/subscribers";
+const FANVUE_API_VERSION = "2025-06-26";
+
+console.log("=".repeat(60));
+console.log("FANVUE SERVER STARTING");
+console.log("=".repeat(60));
+console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
 console.log(`Client ID present: ${!!CLIENT_ID}`);
 console.log(`Client Secret present: ${!!CLIENT_SECRET}`);
 console.log(`Port: ${PORT}`);
-console.log('='.repeat(60));
+console.log("=".repeat(60));
 
-const sessions = new Map();
+// ---- session stores ----
+// sid -> session data (tokens, creator, etc.)
+const sessionsBySid = new Map();
+// state -> sid (for callback validation)
+const stateToSid = new Map();
 
+function signSid(sid) {
+  const mac = crypto.createHmac("sha256", SESSION_SECRET).update(sid).digest("hex");
+  return `${sid}.${mac}`;
+}
+
+function verifySignedSid(signed) {
+  if (!signed || typeof signed !== "string") return null;
+  const [sid, mac] = signed.split(".");
+  if (!sid || !mac) return null;
+  const expected = crypto.createHmac("sha256", SESSION_SECRET).update(sid).digest("hex");
+  if (crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) return sid;
+  return null;
+}
+
+function setSessionCookie(res, sid) {
+  // Render is HTTPS, so secure cookie works
+  res.cookie(SESSION_COOKIE_NAME, signSid(sid), {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
+  });
+}
+
+function clearSession(res) {
+  res.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
+}
+
+function getSid(req) {
+  const signed = req.cookies?.[SESSION_COOKIE_NAME];
+  return verifySignedSid(signed);
+}
+
+function getRedirectUri(req) {
+  // IMPORTANT: Fanvue app must whitelist exactly this
+  return `https://${req.get("host")}/oauth/callback`;
+}
+
+// ---- middleware ----
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, "public")));
 
-// CORS preflight handler (Express 5+ safe)
-app.options('/*anything', (req, res) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+// CORS preflight (keep)
+app.options("/*anything", (req, res) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.sendStatus(200);
 });
 
-// Dashboard
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+// ---- UI ----
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
 });
 
-// SPA fallback
-app.get('/*anything', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+// ---- API: who am I (for dashboard avatar/name) ----
+app.get("/api/me", async (req, res) => {
+  try {
+    const sid = getSid(req);
+    if (!sid) return res.status(401).json({ error: "Not authenticated" });
+
+    const sess = sessionsBySid.get(sid);
+    if (!sess?.accessToken) return res.status(401).json({ error: "Not authenticated" });
+
+    // If we already cached creator, return fast
+    if (sess.creator) {
+      return res.json({
+        username: sess.creator.displayName || sess.creator.handle || "Creator",
+        handle: sess.creator.handle ? `@${sess.creator.handle}` : "",
+        avatar_url: sess.creator.avatarUrl || ""
+      });
+    }
+
+    // Otherwise fetch
+    const apiHeaders = {
+      Authorization: `Bearer ${sess.accessToken}`,
+      "X-Fanvue-API-Version": FANVUE_API_VERSION
+    };
+
+    const profileResponse = await axios.get(FANVUE_API_ME_URL, { headers: apiHeaders });
+    const creator = profileResponse.data;
+
+    sess.creator = creator;
+    sessionsBySid.set(sid, sess);
+
+    return res.json({
+      username: creator.displayName || creator.handle || "Creator",
+      handle: creator.handle ? `@${creator.handle}` : "",
+      avatar_url: creator.avatarUrl || ""
+    });
+  } catch (e) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
 });
 
-// OAuth Start - only if credentials are set
+app.post("/api/logout", (req, res) => {
+  const sid = getSid(req);
+  if (sid) sessionsBySid.delete(sid);
+  clearSession(res);
+  res.json({ ok: true });
+});
+
+// Optional: quick dashboard stat endpoint
+app.get("/api/stats", async (req, res) => {
+  try {
+    const sid = getSid(req);
+    if (!sid) return res.status(401).json({ error: "Not authenticated" });
+
+    const sess = sessionsBySid.get(sid);
+    if (!sess?.accessToken) return res.status(401).json({ error: "Not authenticated" });
+
+    const apiHeaders = {
+      Authorization: `Bearer ${sess.accessToken}`,
+      "X-Fanvue-API-Version": FANVUE_API_VERSION
+    };
+
+    const [profileResponse, subscribersResponse] = await Promise.all([
+      axios.get(FANVUE_API_ME_URL, { headers: apiHeaders }),
+      axios.get(FANVUE_API_SUBSCRIBERS_URL, { params: { page: 1, size: 50 }, headers: apiHeaders })
+    ]);
+
+    const creator = profileResponse.data;
+    const subscribers = subscribersResponse.data?.data || [];
+
+    // cache creator
+    sess.creator = creator;
+    sessionsBySid.set(sid, sess);
+
+    res.json({
+      followersCount: creator.fanCounts?.followersCount || 0,
+      subscribersCount: creator.fanCounts?.subscribersCount || 0,
+      subscribersShown: subscribers.length
+    });
+  } catch (e) {
+    res.status(500).json({ error: "stats_failed" });
+  }
+});
+
+// ---- WEBHOOKS ----
+app.post("/webhooks/fanvue", (req, res) => {
+  // Fanvue will POST here. GET will still show "Cannot GET" and that's OK.
+  console.log("✅ Fanvue webhook received:", req.headers, req.body);
+  res.status(200).send("ok");
+});
+
+// ---- OAUTH ----
 if (!CLIENT_ID || !CLIENT_SECRET) {
-  console.error('Missing CLIENT_ID or CLIENT_SECRET – OAuth routes disabled');
-  app.get('/oauth/start', (req, res) => {
+  console.error("Missing CLIENT_ID or CLIENT_SECRET – OAuth routes disabled");
+  app.get("/oauth/start", (req, res) => {
     res.status(503).send(`
       <h1>Server Misconfigured</h1>
-      <p>Set <code>CLIENT_ID</code> and <code>CLIENT_SECRET</code> in Render environment variables.</p>
-      <p>Also ensure your app's redirect URI in Fanvue developer portal is exactly:</p>
-      <code>https://${req.get('host')}/oauth/callback</code>
+      <p>Set <code>CLIENT_ID</code> and <code>CLIENT_SECRET</code> in Render env vars.</p>
+      <p>Callback must be exactly:</p>
+      <code>${getRedirectUri(req)}</code>
     `);
   });
 } else {
-  app.get('/oauth/start', (req, res) => {
-    const state = crypto.randomBytes(16).toString('hex');
-    const nonce = crypto.randomBytes(16).toString('hex');
+  app.get("/oauth/start", (req, res) => {
+    // create sid cookie
+    const sid = crypto.randomBytes(16).toString("hex");
+    setSessionCookie(res, sid);
 
-    const codeVerifier = crypto.randomBytes(32).toString('base64url')
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    const state = crypto.randomBytes(16).toString("hex");
+    const nonce = crypto.randomBytes(16).toString("hex");
 
-    const codeChallenge = crypto.createHash('sha256')
+    const codeVerifier = crypto.randomBytes(32).toString("base64url")
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+
+    const codeChallenge = crypto.createHash("sha256")
       .update(codeVerifier)
-      .digest('base64url')
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      .digest("base64url")
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 
-    sessions.set(state, { nonce, codeVerifier, timestamp: Date.now() });
+    // store session by sid, map state->sid
+    sessionsBySid.set(sid, { nonce, codeVerifier, timestamp: Date.now() });
+    stateToSid.set(state, sid);
 
-    const redirectUri = `https://${req.get('host')}/oauth/callback`;
+    const redirectUri = getRedirectUri(req);
 
-    console.log('='.repeat(60));
-    console.log('AUTHORIZATION REQUEST');
+    console.log("=".repeat(60));
+    console.log("AUTHORIZATION REQUEST");
     console.log(`Redirect URI used: ${redirectUri}`);
-    console.log('='.repeat(60));
+    console.log("=".repeat(60));
 
-    const authUrl = new URL('https://auth.fanvue.com/oauth2/auth');
-
-    authUrl.searchParams.append('response_type', 'code');
-    authUrl.searchParams.append('client_id', CLIENT_ID);
-    authUrl.searchParams.append('redirect_uri', redirectUri);
-    authUrl.searchParams.append('scope', 'openid offline_access read:self read:fan read:insights');
-    authUrl.searchParams.append('state', state);
-    authUrl.searchParams.append('nonce', nonce);
-    authUrl.searchParams.append('code_challenge', codeChallenge);
-    authUrl.searchParams.append('code_challenge_method', 'S256');
+    const authUrl = new URL(FANVUE_AUTH_URL);
+    authUrl.searchParams.append("response_type", "code");
+    authUrl.searchParams.append("client_id", CLIENT_ID);
+    authUrl.searchParams.append("redirect_uri", redirectUri);
+    authUrl.searchParams.append("scope", "openid offline_access read:self read:fan read:insights");
+    authUrl.searchParams.append("state", state);
+    authUrl.searchParams.append("nonce", nonce);
+    authUrl.searchParams.append("code_challenge", codeChallenge);
+    authUrl.searchParams.append("code_challenge_method", "S256");
 
     res.redirect(authUrl.toString());
   });
 }
 
-// OAuth Callback
-app.get('/oauth/callback', async (req, res) => {
+app.get("/oauth/callback", async (req, res) => {
   const { code, state } = req.query;
 
   if (!code || !state) {
     return res.status(400).send(`
-      <h1>Missing code or state parameter</h1>
-      <p>This usually means the redirect from Fanvue failed.</p>
+      <h1>Missing code or state</h1>
       <a href="/oauth/start">← Retry Login</a>
     `);
   }
 
-  const session = sessions.get(state);
-  if (!session) {
+  const sid = getSid(req);
+  if (!sid) {
+    return res.status(400).send(`
+      <h1>Missing session cookie</h1>
+      <p>Start login again.</p>
+      <a href="/oauth/start">← Retry Login</a>
+    `);
+  }
+
+  const expectedSid = stateToSid.get(state);
+  if (!expectedSid || expectedSid !== sid) {
     return res.status(400).send(`
       <h1>Invalid or expired state</h1>
-      <p>Please restart the login process.</p>
       <a href="/oauth/start">← Retry Login</a>
     `);
   }
 
-  sessions.delete(state);
+  const sess = sessionsBySid.get(sid);
+  if (!sess) {
+    return res.status(400).send(`
+      <h1>Session expired</h1>
+      <a href="/oauth/start">← Retry Login</a>
+    `);
+  }
+
+  // consume state mapping
+  stateToSid.delete(state);
 
   try {
-    const redirectUri = `https://${req.get('host')}/oauth/callback`;
+    const redirectUri = getRedirectUri(req);
+    const basicAuth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
 
-    const basicAuth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-
-    console.log('='.repeat(60));
-    console.log('TOKEN EXCHANGE');
+    console.log("=".repeat(60));
+    console.log("TOKEN EXCHANGE");
     console.log(`Redirect URI: ${redirectUri}`);
-    console.log('='.repeat(60));
+    console.log("=".repeat(60));
 
     const tokenResponse = await axios.post(
-      'https://auth.fanvue.com/oauth2/token',
+      FANVUE_TOKEN_URL,
       new URLSearchParams({
-        grant_type: 'authorization_code',
+        grant_type: "authorization_code",
         code,
         redirect_uri: redirectUri,
-        code_verifier: session.codeVerifier,
+        code_verifier: sess.codeVerifier
       }).toString(),
       {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${basicAuth}`,
-        },
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${basicAuth}`
+        }
       }
     );
 
     const accessToken = tokenResponse.data.access_token;
-    console.log('Token exchange successful');
+    const refreshToken = tokenResponse.data.refresh_token;
 
+    sess.accessToken = accessToken;
+    sess.refreshToken = refreshToken;
+    sess.tokenAt = Date.now();
+    sessionsBySid.set(sid, sess);
+
+    // fetch + cache creator once so dashboard shows immediately
     const apiHeaders = {
       Authorization: `Bearer ${accessToken}`,
-      'X-Fanvue-API-Version': '2025-06-26',
+      "X-Fanvue-API-Version": FANVUE_API_VERSION
     };
+    const profileResponse = await axios.get(FANVUE_API_ME_URL, { headers: apiHeaders });
+    sess.creator = profileResponse.data;
+    sessionsBySid.set(sid, sess);
 
-    // Creator profile
-    const profileResponse = await axios.get('https://api.fanvue.com/users/me', { headers: apiHeaders });
-    const creatorData = profileResponse.data;
-
-    const creatorName = creatorData.displayName || creatorData.handle || 'Creator';
-    const profilePic = creatorData.avatarUrl || '';
-
-    // Subscribers - correct endpoint
-    const subscribersResponse = await axios.get('https://api.fanvue.com/subscribers', {
-      params: { page: 1, size: 50 },
-      headers: apiHeaders,
-    });
-    const subscribers = subscribersResponse.data.data || [];
-
-    console.log(`Success: ${creatorName} has ${subscribers.length} subscribers on page 1`);
-
-    // Success page
-    res.send(`
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Fanvue Connected</title>
-        <style>
-          body { font-family: system-ui, sans-serif; background: #f0f2f5; color: #333; padding: 20px; }
-          .container { max-width: 900px; margin: 40px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
-          .header { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 50px; text-align: center; }
-          .profile { text-align: center; margin: -70px auto 40px; }
-          img { width: 160px; height: 160px; border-radius: 50%; object-fit: cover; border: 6px solid white; box-shadow: 0 8px 25px rgba(0,0,0,0.2); }
-          .stats { display: flex; justify-content: center; gap: 40px; flex-wrap: wrap; padding: 40px; }
-          .stat { background: #f8f9fa; padding: 30px; border-radius: 12px; min-width: 200px; text-align: center; }
-          .stat strong { font-size: 2.8em; display: block; color: #667eea; }
-          footer { text-align: center; padding: 30px; color: #666; }
-          a { color: #667eea; text-decoration: none; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header"><h1>Fanvue Connected Successfully!</h1></div>
-          <div class="profile">
-            ${profilePic ? `<img src="${profilePic}" alt="${creatorName}">` : '<div style="width:160px;height:160px;background:#ccc;border-radius:50%;margin:0 auto;"></div>'}
-            <h2>${creatorName}</h2>
-          </div>
-          <div class="stats">
-            <div class="stat"><strong>${subscribers.length}</strong><div>Subscribers Shown</div></div>
-            <div class="stat"><strong>${creatorData.fanCounts?.followersCount || 0}</strong><div>Followers</div></div>
-            <div class="stat"><strong>${creatorData.fanCounts?.subscribersCount || 0}</strong><div>Total Subscribers</div></div>
-          </div>
-          <footer><a href="/">← Dashboard</a> | <a href="/oauth/start">Login Again</a></footer>
-        </div>
-      </body>
-      </html>
-    `);
+    // send user back to dashboard (not a separate success page)
+    return res.redirect("/?connected=1");
   } catch (error) {
-    console.error('AUTHENTICATION FAILED');
+    console.error("AUTHENTICATION FAILED");
     if (error.response) {
-      console.error('Status:', error.response.status);
-      console.error('Data:', JSON.stringify(error.response.data, null, 2));
+      console.error("Status:", error.response.status);
+      console.error("Data:", JSON.stringify(error.response.data, null, 2));
     } else {
       console.error(error.message);
     }
 
-    const errorMsg = error.response?.data?.error_description || error.message || 'Unknown error';
+    const errorMsg = error.response?.data?.error_description || error.message || "Unknown error";
 
-    res.status(500).send(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>Auth Failed</title>
-        <style>
-          body { font-family: system-ui; background: #f8f9fa; padding: 40px; text-align: center; }
-          .box { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-        </style>
-      </head>
-      <body>
-        <div class="box">
-          <h1>Authentication Failed</h1>
-          <p><strong>Error:</strong> ${errorMsg}</p>
-          <p>Check Render logs for details.</p>
-          <p><a href="/oauth/start">← Retry Login</a></p>
-        </div>
-      </body>
-      </html>
+    return res.status(500).send(`
+      <h1>Authentication Failed</h1>
+      <p><strong>Error:</strong> ${errorMsg}</p>
+      <p><a href="/oauth/start">← Retry Login</a></p>
     `);
   }
 });
 
+// ---- SPA fallback MUST be last (after oauth/api/webhooks) ----
+app.get("/*anything", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
+});
+
 app.listen(PORT, () => {
-  console.log('='.repeat(60));
-  console.log('SERVER READY');
-  console.log('='.repeat(60));
+  console.log("=".repeat(60));
+  console.log("SERVER READY");
+  console.log("=".repeat(60));
   console.log(`Dashboard: https://fanvue-proxy2.onrender.com`);
   console.log(`Start OAuth: https://fanvue-proxy2.onrender.com/oauth/start`);
   console.log(`Expected Redirect URI: https://fanvue-proxy2.onrender.com/oauth/callback`);
-  console.log('='.repeat(60));
+  console.log("Webhook POST: https://fanvue-proxy2.onrender.com/webhooks/fanvue`);
+  console.log("=".repeat(60));
 });
