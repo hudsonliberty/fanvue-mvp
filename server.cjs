@@ -23,8 +23,12 @@ const SESSION_SECRET = (process.env.SESSION_SECRET || 'change-me').trim();
 // --- In-memory stores (ok for MVP; Render restarts clears sessions) ---
 const oauthStates = new Map(); // state -> { codeVerifier, nonce, ts }
 const sessions = new Map();    // sid -> { accessToken, creator, ts }
-const webhookEvents = [];      // latest events (memory)
-const MAX_EVENTS = 50;
+
+const webhookStore = {
+  last: null,
+  events: [], // newest first
+};
+const MAX_EVENTS = 200;
 
 // --- Middleware ---
 app.use(express.json({ limit: '2mb' }));
@@ -34,7 +38,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Helpers ---
 function baseUrl(req) {
-  // Render terminates TLS at proxy; trust proxy enabled.
   return `https://${req.get('host')}`;
 }
 
@@ -65,9 +68,21 @@ function clearSessionCookie(res) {
   res.clearCookie(COOKIE_NAME, { path: '/' });
 }
 
-function addEvent(evt) {
-  webhookEvents.unshift(evt);
-  if (webhookEvents.length > MAX_EVENTS) webhookEvents.length = MAX_EVENTS;
+function pushWebhookEvent(evt) {
+  webhookStore.last = evt;
+  webhookStore.events.unshift(evt);
+  if (webhookStore.events.length > MAX_EVENTS) webhookStore.events.length = MAX_EVENTS;
+}
+
+function pickHeaders(req) {
+  // keep only useful headers (avoid storing everything)
+  return {
+    'user-agent': req.get('user-agent'),
+    'content-type': req.get('content-type'),
+    'x-fanvue-event': req.get('x-fanvue-event'),
+    'x-fanvue-signature': req.get('x-fanvue-signature'),
+    'x-fanvue-timestamp': req.get('x-fanvue-timestamp'),
+  };
 }
 
 // --- Startup log ---
@@ -239,34 +254,67 @@ app.post('/api/logout', (req, res) => {
   return res.json({ ok: true });
 });
 
-// Webhook endpoint (Fanvue POSTs here)
-// IMPORTANT: Fanvue needs POST. Browsers hitting it will GET. We handle both.
-app.get('/webhooks/fanvue', (req, res) => res.status(200).send('ok'));
+// ===============================
+// WEBHOOKS (Fanvue -> this server)
+// ===============================
 
+// Browser-friendly GET so you never see “Cannot GET …”
+app.get('/webhooks/fanvue', (req, res) => {
+  res.status(200).send('OK: Fanvue webhook endpoint is live. Send POST to this URL.');
+});
+
+// Fanvue sends POST here
 app.post('/webhooks/fanvue', (req, res) => {
   const evt = {
-    ts: Date.now(),
-    headers: req.headers,
-    body: req.body
+    receivedAt: new Date().toISOString(),
+    ip: req.ip,
+    headers: pickHeaders(req),
+    body: req.body ?? null,
   };
-  addEvent(evt);
+
+  pushWebhookEvent(evt);
+
   console.log('✅ Fanvue webhook received:', {
     type: req.body?.type,
     id: req.body?.data?.id || req.body?.id
   });
-  return res.status(200).send('ok');
+
+  // Respond fast
+  return res.status(200).json({ ok: true });
 });
 
-// API: events (dashboard pulls last webhook payloads)
+// API: webhook last (dashboard payload box)
+app.get('/api/webhooks/last', (req, res) => {
+  const s = getSession(req);
+  if (!s) return res.status(401).json({ error: 'Not authenticated' });
+  return res.json(webhookStore.last || { ok: false, message: 'No webhooks received yet' });
+});
+
+// API: webhook events (dashboard list)
+app.get('/api/webhooks/events', (req, res) => {
+  const s = getSession(req);
+  if (!s) return res.status(401).json({ error: 'Not authenticated' });
+  return res.json({ count: webhookStore.events.length, events: webhookStore.events });
+});
+
+// Backward-compatible API (your old endpoint)
 app.get('/api/events', (req, res) => {
   const s = getSession(req);
   if (!s) return res.status(401).json({ error: 'Not authenticated' });
-  return res.json({ count: webhookEvents.length, events: webhookEvents });
+  return res.json({ count: webhookStore.events.length, events: webhookStore.events });
 });
 
 // Optional: clear events (admin)
+app.post('/api/webhooks/clear', requireAdmin, (req, res) => {
+  webhookStore.last = null;
+  webhookStore.events.length = 0;
+  return res.json({ ok: true });
+});
+
+// Backward-compatible clear
 app.post('/api/events/clear', requireAdmin, (req, res) => {
-  webhookEvents.length = 0;
+  webhookStore.last = null;
+  webhookStore.events.length = 0;
   return res.json({ ok: true });
 });
 
@@ -283,5 +331,7 @@ app.listen(PORT, () => {
   console.log(`OAuth Start: https://fanvue-proxy2.onrender.com/oauth/start`);
   console.log(`Callback:    https://fanvue-proxy2.onrender.com/oauth/callback`);
   console.log(`Webhook:     https://fanvue-proxy2.onrender.com/webhooks/fanvue`);
+  console.log(`Webhook Last: https://fanvue-proxy2.onrender.com/api/webhooks/last`);
+  console.log(`Webhook List: https://fanvue-proxy2.onrender.com/api/webhooks/events`);
   console.log('='.repeat(60));
 });
