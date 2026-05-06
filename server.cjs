@@ -1,4 +1,4 @@
-// server.cjs — Fanvue MVP + DaniApp OAuth Routes
+// server.cjs — Fanvue MVP + On My Time / DaniApp OAuth Routes
 
 require("dotenv").config();
 
@@ -414,7 +414,7 @@ app.get("/daniapp/oauth/start", (req, res) => {
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set(
     "scope",
-    "openid offline_access write:post write:media"
+    "openid offline_access write:post write:media read:self"
   );
   authUrl.searchParams.set("state", pkce.state);
   authUrl.searchParams.set("nonce", pkce.nonce);
@@ -483,11 +483,53 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
       throw new Error("No access_token returned");
     }
 
+    const apiHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+      "X-Fanvue-API-Version": "2025-06-26",
+    };
+
+    let creator = {};
+
+    try {
+      const profileResp = await axios.get(
+        "https://api.fanvue.com/users/me",
+        {
+          headers: apiHeaders,
+          timeout: 20000,
+        }
+      );
+
+      creator = profileResp.data || {};
+    } catch (profileErr) {
+      console.error(
+        "DANIAPP PROFILE FETCH FAILED:",
+        profileErr?.response?.status,
+        profileErr?.response?.data || profileErr.message
+      );
+
+      creator = {};
+    }
+
+    const displayName =
+      creator.displayName ||
+      creator.name ||
+      creator.handle ||
+      "Fanvue Creator";
+
+    const avatar =
+      creator.avatarUrl ||
+      creator.avatar_url ||
+      creator.avatarUri?.url ||
+      creator.avatarUriSm?.url ||
+      creator.avatarUriXs?.url ||
+      "";
+
     const sid = crypto.randomBytes(24).toString("hex");
 
     sessions.set(sid, {
       accessToken,
       creator: {
+        ...creator,
         app: "On My Time",
         connected: true,
       },
@@ -499,7 +541,12 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
     console.log("DANIAPP TOKEN SUCCESS");
 
     return res.redirect(
-      "https://thesuccessmindset.club/daniapp/index.html?connected=1"
+      "https://thesuccessmindset.club/daniapp/index.html" +
+        "?connected=1" +
+        "&name=" +
+        encodeURIComponent(displayName) +
+        "&avatar=" +
+        encodeURIComponent(avatar)
     );
   } catch (err) {
     console.error(
@@ -532,13 +579,19 @@ app.get("/api/me", (req, res) => {
   return res.json({
     username:
       c.displayName ||
+      c.name ||
       c.handle ||
       c.app ||
       "Creator",
     handle: c.handle
       ? `@${String(c.handle).replace(/^@/, "")}`
       : "",
-    avatar_url: c.avatarUrl || "",
+    avatar_url:
+      c.avatarUrl ||
+      c.avatar_url ||
+      c.avatarUri?.url ||
+      c.avatarUriSm?.url ||
+      "",
     raw: c,
   });
 });
