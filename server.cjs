@@ -14,20 +14,17 @@ const PORT = process.env.PORT || 10000;
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.set("trust proxy", true);
+
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "https://thesuccessmindset.club");
   res.header("Access-Control-Allow-Credentials", "true");
   res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
-// --- ENV ---
 const CLIENT_ID = (process.env.CLIENT_ID || "").trim();
 const CLIENT_SECRET = (process.env.CLIENT_SECRET || "").trim();
 
@@ -43,18 +40,15 @@ const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || "").trim();
 
 const FANVUE_API_VERSION = "2025-06-26";
 
-// --- In-memory stores ---
 const oauthStates = new Map();
 const sessions = new Map();
 const webhookEvents = [];
 const MAX_EVENTS = 100;
 
-// --- Raw-body capture ---
 function rawBodySaver(req, res, buf) {
   if (buf && buf.length) req.rawBody = buf.toString("utf8");
 }
 
-// --- Middleware ---
 app.use(
   express.json({
     limit: "20mb",
@@ -66,7 +60,6 @@ app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(cookieParser(SESSION_SECRET));
 app.use(express.static(path.join(__dirname, "public")));
 
-// --- Helpers ---
 function baseUrl(req) {
   return `https://${req.get("host")}`;
 }
@@ -75,19 +68,14 @@ function requireAdmin(req, res, next) {
   if (!ADMIN_TOKEN) return next();
 
   const got = (req.get("x-admin-token") || "").trim();
-
   if (got && got === ADMIN_TOKEN) return next();
 
-  return res.status(401).json({
-    error: "Unauthorized",
-  });
+  return res.status(401).json({ error: "Unauthorized" });
 }
 
 function getSession(req) {
   const sid = req.signedCookies?.[COOKIE_NAME];
-
   if (!sid) return null;
-
   return sessions.get(sid) || null;
 }
 
@@ -103,56 +91,31 @@ function setSessionCookie(res, sid) {
 }
 
 function clearSessionCookie(res) {
-  res.clearCookie(COOKIE_NAME, {
-    path: "/",
-  });
+  res.clearCookie(COOKIE_NAME, { path: "/" });
 }
 
 function addEvent(evt) {
   webhookEvents.unshift(evt);
-
-  if (webhookEvents.length > MAX_EVENTS) {
-    webhookEvents.length = MAX_EVENTS;
-  }
+  if (webhookEvents.length > MAX_EVENTS) webhookEvents.length = MAX_EVENTS;
 }
 
 function verifyFanvueSignature(req) {
-  if (!WEBHOOK_SECRET) {
-    return {
-      ok: true,
-      reason: "WEBHOOK_SECRET not set",
-    };
-  }
+  if (!WEBHOOK_SECRET) return { ok: true, reason: "WEBHOOK_SECRET not set" };
 
   const sig = (req.get("x-fanvue-signature") || "").trim();
-
-  if (!sig) {
-    return {
-      ok: false,
-      reason: "missing x-fanvue-signature",
-    };
-  }
+  if (!sig) return { ok: false, reason: "missing x-fanvue-signature" };
 
   const parts = Object.fromEntries(
     sig.split(",").map((kv) => {
       const [k, v] = kv.split("=");
-
-      return [
-        String(k || "").trim(),
-        String(v || "").trim(),
-      ];
+      return [String(k || "").trim(), String(v || "").trim()];
     })
   );
 
   const t = parts.t;
   const v0 = parts.v0;
 
-  if (!t || !v0) {
-    return {
-      ok: false,
-      reason: "signature missing t or v0",
-    };
-  }
+  if (!t || !v0) return { ok: false, reason: "signature missing t or v0" };
 
   const raw = req.rawBody || "";
 
@@ -165,28 +128,18 @@ function verifyFanvueSignature(req) {
   const b = Buffer.from(v0, "hex");
 
   if (a.length !== b.length) {
-    return {
-      ok: false,
-      reason: "signature length mismatch",
-    };
+    return { ok: false, reason: "signature length mismatch" };
   }
 
   const ok = crypto.timingSafeEqual(a, b);
 
-  return {
-    ok,
-    reason: ok ? "ok" : "signature mismatch",
-  };
+  return { ok, reason: ok ? "ok" : "signature mismatch" };
 }
 
 function normalizeWebhook(body) {
   const sender = body?.sender || {};
 
-  const senderName =
-    sender?.displayName ||
-    sender?.handle ||
-    "";
-
+  const senderName = sender?.displayName || sender?.handle || "";
   const senderHandle = sender?.handle
     ? `@${String(sender.handle).replace(/^@/, "")}`
     : "";
@@ -197,17 +150,10 @@ function normalizeWebhook(body) {
     sender?.avatarUriXs?.url ||
     "";
 
-  const text =
-    body?.data?.text ||
-    body?.text ||
-    body?.message ||
-    "";
+  const text = body?.data?.text || body?.text || body?.message || "";
 
   const messageUuid =
-    body?.messageUuid ||
-    body?.data?.id ||
-    body?.id ||
-    "";
+    body?.messageUuid || body?.data?.id || body?.id || "";
 
   const recipientUuid =
     body?.recipientUuid ||
@@ -215,10 +161,7 @@ function normalizeWebhook(body) {
     body?.data?.recipientUuid ||
     "";
 
-  const type =
-    body?.type ||
-    body?.event ||
-    "unknown";
+  const type = body?.type || body?.event || "unknown";
 
   return {
     type,
@@ -271,7 +214,34 @@ function getMediaType(mimetype) {
   return "document";
 }
 
-// --- Startup log ---
+function extractCreatorProfile(creator) {
+  const name =
+    creator.displayName ||
+    creator.name ||
+    creator.username ||
+    creator.handle ||
+    creator.email ||
+    "Fanvue Creator";
+
+  const handle = creator.handle
+    ? `@${String(creator.handle).replace(/^@/, "")}`
+    : "";
+
+  const avatar =
+    creator.avatarUrl ||
+    creator.avatar_url ||
+    creator.avatarUri?.url ||
+    creator.avatarUriSm?.url ||
+    creator.avatarUriXs?.url ||
+    creator.profilePictureUrl ||
+    creator.profile_picture_url ||
+    creator.imageUrl ||
+    creator.image_url ||
+    "";
+
+  return { name, handle, avatar };
+}
+
 console.log("=".repeat(60));
 console.log("FANVUE MVP STARTING");
 console.log("=".repeat(60));
@@ -286,8 +256,6 @@ console.log(`WEBHOOK_SECRET present: ${!!WEBHOOK_SECRET}`);
 console.log(`PORT: ${PORT}`);
 console.log("=".repeat(60));
 
-// --- Routes ---
-
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "dashboard.html"));
 });
@@ -296,30 +264,19 @@ app.get("/health", (req, res) => {
   res.status(200).send("ok");
 });
 
-// =========================
-// ORIGINAL MVP OAUTH START
-// =========================
-
 app.get("/oauth/start", (req, res) => {
   if (!CLIENT_ID || !CLIENT_SECRET) {
-    return res
-      .status(503)
-      .send("Missing CLIENT_ID / CLIENT_SECRET in environment.");
+    return res.status(503).send("Missing CLIENT_ID / CLIENT_SECRET in environment.");
   }
 
   const pkce = createPkceState();
-
   const redirectUri = `${baseUrl(req)}/oauth/callback`;
 
   const authUrl = new URL("https://auth.fanvue.com/oauth2/auth");
-
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", CLIENT_ID);
   authUrl.searchParams.set("redirect_uri", redirectUri);
-  authUrl.searchParams.set(
-    "scope",
-    "openid offline_access read:self read:fan read:insights"
-  );
+  authUrl.searchParams.set("scope", "openid offline_access read:self read:fan read:insights");
   authUrl.searchParams.set("state", pkce.state);
   authUrl.searchParams.set("nonce", pkce.nonce);
   authUrl.searchParams.set("code_challenge", pkce.codeChallenge);
@@ -328,31 +285,20 @@ app.get("/oauth/start", (req, res) => {
   return res.redirect(authUrl.toString());
 });
 
-// =========================
-// ORIGINAL MVP OAUTH CALLBACK
-// =========================
-
 app.get("/oauth/callback", async (req, res) => {
   const { code, state } = req.query;
 
-  if (!code || !state) {
-    return res.status(400).send("Missing code/state");
-  }
+  if (!code || !state) return res.status(400).send("Missing code/state");
 
   const st = oauthStates.get(state);
-
-  if (!st) {
-    return res.status(400).send("Invalid/expired state. Restart login.");
-  }
+  if (!st) return res.status(400).send("Invalid/expired state. Restart login.");
 
   oauthStates.delete(state);
 
   try {
     const redirectUri = `${baseUrl(req)}/oauth/callback`;
 
-    const basicAuth = Buffer
-      .from(`${CLIENT_ID}:${CLIENT_SECRET}`)
-      .toString("base64");
+    const basicAuth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
 
     const tokenResp = await axios.post(
       "https://auth.fanvue.com/oauth2/token",
@@ -372,23 +318,17 @@ app.get("/oauth/callback", async (req, res) => {
     );
 
     const accessToken = tokenResp.data.access_token;
-
-    if (!accessToken) {
-      throw new Error("No access_token returned");
-    }
+    if (!accessToken) throw new Error("No access_token returned");
 
     const apiHeaders = {
       Authorization: `Bearer ${accessToken}`,
       "X-Fanvue-API-Version": FANVUE_API_VERSION,
     };
 
-    const profileResp = await axios.get(
-      "https://api.fanvue.com/users/me",
-      {
-        headers: apiHeaders,
-        timeout: 20000,
-      }
-    );
+    const profileResp = await axios.get("https://api.fanvue.com/users/me", {
+      headers: apiHeaders,
+      timeout: 20000,
+    });
 
     const creator = profileResp.data || {};
 
@@ -404,42 +344,24 @@ app.get("/oauth/callback", async (req, res) => {
 
     return res.redirect("/");
   } catch (err) {
-    console.error(
-      "OAuth callback failed:",
-      err?.response?.status,
-      err?.response?.data || err.message
-    );
-
-    return res
-      .status(500)
-      .send("Authentication failed. Check Render logs.");
+    console.error("OAuth callback failed:", err?.response?.status, err?.response?.data || err.message);
+    return res.status(500).send("Authentication failed. Check Render logs.");
   }
 });
 
-// =========================
-// DANIAPP OAUTH START
-// =========================
-
 app.get("/daniapp/oauth/start", (req, res) => {
   if (!DANI_CLIENT_ID || !DANI_CLIENT_SECRET || !DANI_REDIRECT_URI) {
-    return res
-      .status(503)
-      .send("Missing DANI_CLIENT_ID / DANI_CLIENT_SECRET / DANI_REDIRECT_URI in environment.");
+    return res.status(503).send("Missing DANI_CLIENT_ID / DANI_CLIENT_SECRET / DANI_REDIRECT_URI in environment.");
   }
 
   const pkce = createPkceState();
-
   const redirectUri = DANI_REDIRECT_URI;
 
   const authUrl = new URL("https://auth.fanvue.com/oauth2/auth");
-
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", DANI_CLIENT_ID);
   authUrl.searchParams.set("redirect_uri", redirectUri);
-  authUrl.searchParams.set(
-    "scope",
-    "openid offline_access write:post write:media"
-  );
+  authUrl.searchParams.set("scope", "openid offline_access write:post write:media read:self");
   authUrl.searchParams.set("state", pkce.state);
   authUrl.searchParams.set("nonce", pkce.nonce);
   authUrl.searchParams.set("code_challenge", pkce.codeChallenge);
@@ -448,41 +370,24 @@ app.get("/daniapp/oauth/start", (req, res) => {
   return res.redirect(authUrl.toString());
 });
 
-// =========================
-// DANIAPP OAUTH CALLBACK
-// =========================
-
 app.get("/daniapp/oauth/callback", async (req, res) => {
   const { code, state, error, error_description } = req.query;
 
   if (error) {
-    return res
-      .status(400)
-      .send(
-        `Fanvue denied authorization: ${error} ${
-          error_description || ""
-        }`
-      );
+    return res.status(400).send(`Fanvue denied authorization: ${error} ${error_description || ""}`);
   }
 
-  if (!code || !state) {
-    return res.status(400).send("Missing code/state");
-  }
+  if (!code || !state) return res.status(400).send("Missing code/state");
 
   const st = oauthStates.get(state);
-
-  if (!st) {
-    return res.status(400).send("Invalid/expired state. Restart connection.");
-  }
+  if (!st) return res.status(400).send("Invalid/expired state. Restart connection.");
 
   oauthStates.delete(state);
 
   try {
     const redirectUri = DANI_REDIRECT_URI;
 
-    const basicAuth = Buffer
-      .from(`${DANI_CLIENT_ID}:${DANI_CLIENT_SECRET}`)
-      .toString("base64");
+    const basicAuth = Buffer.from(`${DANI_CLIENT_ID}:${DANI_CLIENT_SECRET}`).toString("base64");
 
     const tokenResp = await axios.post(
       "https://auth.fanvue.com/oauth2/token",
@@ -502,19 +407,45 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
     );
 
     const accessToken = tokenResp.data.access_token;
+    if (!accessToken) throw new Error("No access_token returned");
 
-    if (!accessToken) {
-      throw new Error("No access_token returned");
+    const apiHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+      "X-Fanvue-API-Version": FANVUE_API_VERSION,
+    };
+
+    let creator = {
+      app: "On My Time",
+      connected: true,
+    };
+
+    try {
+      const profileResp = await axios.get("https://api.fanvue.com/users/me", {
+        headers: apiHeaders,
+        timeout: 20000,
+      });
+
+      creator = {
+        ...creator,
+        ...(profileResp.data || {}),
+      };
+
+      console.log("DANIAPP PROFILE:", creator);
+    } catch (profileErr) {
+      console.error(
+        "DANIAPP PROFILE FETCH FAILED:",
+        profileErr?.response?.status,
+        profileErr?.response?.data || profileErr.message
+      );
     }
+
+    const profile = extractCreatorProfile(creator);
 
     const sid = crypto.randomBytes(24).toString("hex");
 
     sessions.set(sid, {
       accessToken,
-      creator: {
-        app: "On My Time",
-        connected: true,
-      },
+      creator,
       ts: Date.now(),
     });
 
@@ -523,24 +454,17 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
     console.log("DANIAPP TOKEN SUCCESS");
 
     return res.redirect(
-      "https://thesuccessmindset.club/daniapp/index.html?connected=1"
+      "https://thesuccessmindset.club/daniapp/index.html" +
+        "?connected=1" +
+        "&name=" + encodeURIComponent(profile.name) +
+        "&handle=" + encodeURIComponent(profile.handle) +
+        "&avatar=" + encodeURIComponent(profile.avatar)
     );
   } catch (err) {
-    console.error(
-      "DANIAPP OAUTH FAILED:",
-      err?.response?.status,
-      err?.response?.data || err.message
-    );
-
-    return res
-      .status(500)
-      .send("DaniApp OAuth failed. Check Render logs.");
+    console.error("DANIAPP OAUTH FAILED:", err?.response?.status, err?.response?.data || err.message);
+    return res.status(500).send("DaniApp OAuth failed. Check Render logs.");
   }
 });
-
-// =========================
-// DANIAPP POST API
-// =========================
 
 app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
   const s = getSession(req);
@@ -596,7 +520,6 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       "X-Fanvue-API-Version": FANVUE_API_VERSION,
     };
 
-    // 1. Create upload session.
     const uploadSession = await axios.post(
       "https://api.fanvue.com/media/uploads",
       {
@@ -624,7 +547,6 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       });
     }
 
-    // 2. Get signed URL for part 1.
     const signedUrlResp = await axios.get(
       `https://api.fanvue.com/media/uploads/${encodeURIComponent(uploadId)}/parts/1/url`,
       {
@@ -635,17 +557,17 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
 
     console.log("SIGNED URL RESPONSE:", signedUrlResp.data);
 
-const signedUrl =
-  signedUrlResp.data.url ||
-  signedUrlResp.data.uploadUrl ||
-  signedUrlResp.data.signedUrl ||
-  signedUrlResp.data.presignedUrl ||
-  signedUrlResp.data.href ||
-  signedUrlResp.data.putUrl ||
-  signedUrlResp.data.data?.url ||
-  signedUrlResp.data.data?.uploadUrl ||
-  signedUrlResp.data.data?.signedUrl ||
-  signedUrlResp.data.data?.presignedUrl;
+    const signedUrl =
+      signedUrlResp.data.url ||
+      signedUrlResp.data.uploadUrl ||
+      signedUrlResp.data.signedUrl ||
+      signedUrlResp.data.presignedUrl ||
+      signedUrlResp.data.href ||
+      signedUrlResp.data.putUrl ||
+      signedUrlResp.data.data?.url ||
+      signedUrlResp.data.data?.uploadUrl ||
+      signedUrlResp.data.data?.signedUrl ||
+      signedUrlResp.data.data?.presignedUrl;
 
     if (!signedUrl) {
       return res.status(500).json({
@@ -655,7 +577,6 @@ const signedUrl =
       });
     }
 
-    // 3. Upload file to signed URL.
     const uploadPartResp = await axios.put(signedUrl, req.file.buffer, {
       headers: {
         "Content-Type": req.file.mimetype,
@@ -666,14 +587,9 @@ const signedUrl =
       validateStatus: (status) => status >= 200 && status < 300,
     });
 
-    const etagRaw =
-      uploadPartResp.headers.etag ||
-      uploadPartResp.headers.ETag ||
-      "";
-
+    const etagRaw = uploadPartResp.headers.etag || uploadPartResp.headers.ETag || "";
     const etag = String(etagRaw).replace(/^"|"$/g, "");
 
-    // 4. Complete upload.
     const completePayload = etag
       ? {
           parts: [
@@ -703,7 +619,6 @@ const signedUrl =
       }
     );
 
-    // 5. Create post.
     const postPayload = {
       audience,
       text: caption,
@@ -740,11 +655,7 @@ const signedUrl =
       post: postResp.data,
     });
   } catch (err) {
-    console.error(
-      "DANIAPP POST FAILED:",
-      err?.response?.status,
-      err?.response?.data || err.message
-    );
+    console.error("DANIAPP POST FAILED:", err?.response?.status, err?.response?.data || err.message);
 
     return res.status(500).json({
       ok: false,
@@ -753,10 +664,6 @@ const signedUrl =
     });
   }
 });
-
-// =========================
-// API ROUTES
-// =========================
 
 app.get("/api/me", (req, res) => {
   const s = getSession(req);
@@ -768,23 +675,12 @@ app.get("/api/me", (req, res) => {
   }
 
   const c = s.creator || {};
+  const profile = extractCreatorProfile(c);
 
   return res.json({
-    username:
-      c.displayName ||
-      c.name ||
-      c.handle ||
-      c.app ||
-      "Creator",
-    handle: c.handle
-      ? `@${String(c.handle).replace(/^@/, "")}`
-      : "",
-    avatar_url:
-      c.avatarUrl ||
-      c.avatar_url ||
-      c.avatarUri?.url ||
-      c.avatarUriSm?.url ||
-      "",
+    username: profile.name,
+    handle: profile.handle,
+    avatar_url: profile.avatar,
     raw: c,
   });
 });
@@ -792,20 +688,12 @@ app.get("/api/me", (req, res) => {
 app.post("/api/logout", (req, res) => {
   const sid = req.signedCookies?.[COOKIE_NAME];
 
-  if (sid) {
-    sessions.delete(sid);
-  }
+  if (sid) sessions.delete(sid);
 
   clearSessionCookie(res);
 
-  return res.json({
-    ok: true,
-  });
+  return res.json({ ok: true });
 });
-
-// =========================
-// WEBHOOKS
-// =========================
 
 app.get("/webhooks/fanvue", (req, res) => {
   res.status(200).send("ok");
@@ -816,15 +704,11 @@ app.post("/webhooks/fanvue", (req, res) => {
 
   if (!ver.ok) {
     console.warn("Webhook rejected:", ver.reason);
-
     return res.status(401).send("invalid signature");
   }
 
   const receivedAt = new Date().toISOString();
-  const ip =
-    req.headers["x-forwarded-for"] ||
-    req.socket.remoteAddress ||
-    "";
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
 
   const normalized = normalizeWebhook(req.body);
 
@@ -846,9 +730,7 @@ app.post("/webhooks/fanvue", (req, res) => {
   console.log("Fanvue webhook received:", {
     type: normalized.type,
     messageUuid: normalized.messageUuid,
-    sender:
-      normalized.senderHandle ||
-      normalized.senderName,
+    sender: normalized.senderHandle || normalized.senderName,
   });
 
   return res.status(200).send("ok");
@@ -883,13 +765,9 @@ app.get("/api/events/last", (req, res) => {
 
 app.post("/api/events/clear", requireAdmin, (req, res) => {
   webhookEvents.length = 0;
-
-  return res.json({
-    ok: true,
-  });
+  return res.json({ ok: true });
 });
 
-// SPA fallback
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "dashboard.html"));
 });
