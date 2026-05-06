@@ -20,7 +20,6 @@ app.use((req, res, next) => {
   res.header("Access-Control-Allow-Credentials", "true");
   res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
@@ -33,7 +32,6 @@ const DANI_CLIENT_SECRET = (process.env.DANI_CLIENT_SECRET || "").trim();
 const DANI_REDIRECT_URI = (process.env.DANI_REDIRECT_URI || "").trim();
 
 const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || "").trim();
-
 const COOKIE_NAME = (process.env.SESSION_COOKIE_NAME || "fanvue_oauth").trim();
 const SESSION_SECRET = (process.env.SESSION_SECRET || "change-me").trim();
 const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || "").trim();
@@ -49,13 +47,7 @@ function rawBodySaver(req, res, buf) {
   if (buf && buf.length) req.rawBody = buf.toString("utf8");
 }
 
-app.use(
-  express.json({
-    limit: "20mb",
-    verify: rawBodySaver,
-  })
-);
-
+app.use(express.json({ limit: "20mb", verify: rawBodySaver }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(cookieParser(SESSION_SECRET));
 app.use(express.static(path.join(__dirname, "public")));
@@ -66,10 +58,8 @@ function baseUrl(req) {
 
 function requireAdmin(req, res, next) {
   if (!ADMIN_TOKEN) return next();
-
   const got = (req.get("x-admin-token") || "").trim();
   if (got && got === ADMIN_TOKEN) return next();
-
   return res.status(401).json({ error: "Unauthorized" });
 }
 
@@ -100,10 +90,10 @@ function addEvent(evt) {
 }
 
 function verifyFanvueSignature(req) {
-  if (!WEBHOOK_SECRET) return { ok: true, reason: "WEBHOOK_SECRET not set" };
+  if (!WEBHOOK_SECRET) return { ok: true };
 
   const sig = (req.get("x-fanvue-signature") || "").trim();
-  if (!sig) return { ok: false, reason: "missing x-fanvue-signature" };
+  if (!sig) return { ok: false };
 
   const parts = Object.fromEntries(
     sig.split(",").map((kv) => {
@@ -115,62 +105,42 @@ function verifyFanvueSignature(req) {
   const t = parts.t;
   const v0 = parts.v0;
 
-  if (!t || !v0) return { ok: false, reason: "signature missing t or v0" };
-
-  const raw = req.rawBody || "";
+  if (!t || !v0) return { ok: false };
 
   const computed = crypto
     .createHmac("sha256", WEBHOOK_SECRET)
-    .update(`${t}.${raw}`, "utf8")
+    .update(`${t}.${req.rawBody || ""}`, "utf8")
     .digest("hex");
 
   const a = Buffer.from(computed, "hex");
   const b = Buffer.from(v0, "hex");
 
-  if (a.length !== b.length) {
-    return { ok: false, reason: "signature length mismatch" };
-  }
+  if (a.length !== b.length) return { ok: false };
 
-  const ok = crypto.timingSafeEqual(a, b);
-
-  return { ok, reason: ok ? "ok" : "signature mismatch" };
+  return { ok: crypto.timingSafeEqual(a, b) };
 }
 
 function normalizeWebhook(body) {
   const sender = body?.sender || {};
 
-  const senderName = sender?.displayName || sender?.handle || "";
-  const senderHandle = sender?.handle
-    ? `@${String(sender.handle).replace(/^@/, "")}`
-    : "";
-
-  const senderAvatar =
-    sender?.avatarUri?.url ||
-    sender?.avatarUriSm?.url ||
-    sender?.avatarUriXs?.url ||
-    "";
-
-  const text = body?.data?.text || body?.text || body?.message || "";
-
-  const messageUuid =
-    body?.messageUuid || body?.data?.id || body?.id || "";
-
-  const recipientUuid =
-    body?.recipientUuid ||
-    body?.recipient?.uuid ||
-    body?.data?.recipientUuid ||
-    "";
-
-  const type = body?.type || body?.event || "unknown";
-
   return {
-    type,
-    messageUuid,
-    recipientUuid,
-    senderName,
-    senderHandle,
-    senderAvatar,
-    text,
+    type: body?.type || body?.event || "unknown",
+    messageUuid: body?.messageUuid || body?.data?.id || body?.id || "",
+    recipientUuid:
+      body?.recipientUuid ||
+      body?.recipient?.uuid ||
+      body?.data?.recipientUuid ||
+      "",
+    senderName: sender?.displayName || sender?.handle || "",
+    senderHandle: sender?.handle
+      ? `@${String(sender.handle).replace(/^@/, "")}`
+      : "",
+    senderAvatar:
+      sender?.avatarUri?.url ||
+      sender?.avatarUriSm?.url ||
+      sender?.avatarUriXs?.url ||
+      "",
+    text: body?.data?.text || body?.text || body?.message || "",
   };
 }
 
@@ -193,18 +163,9 @@ function createPkceState() {
     .replace(/\//g, "_")
     .replace(/=/g, "");
 
-  oauthStates.set(state, {
-    nonce,
-    codeVerifier,
-    ts: Date.now(),
-  });
+  oauthStates.set(state, { nonce, codeVerifier, ts: Date.now() });
 
-  return {
-    state,
-    nonce,
-    codeVerifier,
-    codeChallenge,
-  };
+  return { state, nonce, codeVerifier, codeChallenge };
 }
 
 function getMediaType(mimetype) {
@@ -215,31 +176,73 @@ function getMediaType(mimetype) {
 }
 
 function extractCreatorProfile(creator) {
-  const name =
-    creator.displayName ||
-    creator.name ||
-    creator.username ||
-    creator.handle ||
-    creator.email ||
-    "Fanvue Creator";
+  return {
+    name:
+      creator.displayName ||
+      creator.name ||
+      creator.username ||
+      creator.handle ||
+      creator.email ||
+      "Fanvue Creator",
 
-  const handle = creator.handle
-    ? `@${String(creator.handle).replace(/^@/, "")}`
-    : "";
+    handle: creator.handle
+      ? `@${String(creator.handle).replace(/^@/, "")}`
+      : "",
 
-  const avatar =
-    creator.avatarUrl ||
-    creator.avatar_url ||
-    creator.avatarUri?.url ||
-    creator.avatarUriSm?.url ||
-    creator.avatarUriXs?.url ||
-    creator.profilePictureUrl ||
-    creator.profile_picture_url ||
-    creator.imageUrl ||
-    creator.image_url ||
-    "";
+    avatar:
+      creator.avatarUrl ||
+      creator.avatar_url ||
+      creator.avatarUri?.url ||
+      creator.avatarUriSm?.url ||
+      creator.avatarUriXs?.url ||
+      creator.profilePictureUrl ||
+      creator.profile_picture_url ||
+      creator.imageUrl ||
+      creator.image_url ||
+      "",
+  };
+}
 
-  return { name, handle, avatar };
+function findSignedUrl(value) {
+  if (!value) return "";
+
+  if (typeof value === "string") {
+    if (value.startsWith("https://")) return value;
+    return "";
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findSignedUrl(item);
+      if (found) return found;
+    }
+  }
+
+  if (typeof value === "object") {
+    const priorityKeys = [
+      "url",
+      "uploadUrl",
+      "signedUrl",
+      "presignedUrl",
+      "href",
+      "putUrl",
+      "upload_url",
+      "signed_url",
+      "presigned_url",
+    ];
+
+    for (const key of priorityKeys) {
+      const found = findSignedUrl(value[key]);
+      if (found) return found;
+    }
+
+    for (const key of Object.keys(value)) {
+      const found = findSignedUrl(value[key]);
+      if (found) return found;
+    }
+  }
+
+  return "";
 }
 
 console.log("=".repeat(60));
@@ -251,8 +254,6 @@ console.log(`CLIENT_SECRET present: ${!!CLIENT_SECRET}`);
 console.log(`DANI_CLIENT_ID present: ${!!DANI_CLIENT_ID}`);
 console.log(`DANI_CLIENT_SECRET present: ${!!DANI_CLIENT_SECRET}`);
 console.log(`DANI_REDIRECT_URI present: ${!!DANI_REDIRECT_URI}`);
-console.log(`ADMIN_TOKEN present: ${!!ADMIN_TOKEN}`);
-console.log(`WEBHOOK_SECRET present: ${!!WEBHOOK_SECRET}`);
 console.log(`PORT: ${PORT}`);
 console.log("=".repeat(60));
 
@@ -264,104 +265,23 @@ app.get("/health", (req, res) => {
   res.status(200).send("ok");
 });
 
-app.get("/oauth/start", (req, res) => {
-  if (!CLIENT_ID || !CLIENT_SECRET) {
-    return res.status(503).send("Missing CLIENT_ID / CLIENT_SECRET in environment.");
-  }
-
-  const pkce = createPkceState();
-  const redirectUri = `${baseUrl(req)}/oauth/callback`;
-
-  const authUrl = new URL("https://auth.fanvue.com/oauth2/auth");
-  authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("client_id", CLIENT_ID);
-  authUrl.searchParams.set("redirect_uri", redirectUri);
-  authUrl.searchParams.set("scope", "openid offline_access read:self read:fan read:insights");
-  authUrl.searchParams.set("state", pkce.state);
-  authUrl.searchParams.set("nonce", pkce.nonce);
-  authUrl.searchParams.set("code_challenge", pkce.codeChallenge);
-  authUrl.searchParams.set("code_challenge_method", "S256");
-
-  return res.redirect(authUrl.toString());
-});
-
-app.get("/oauth/callback", async (req, res) => {
-  const { code, state } = req.query;
-
-  if (!code || !state) return res.status(400).send("Missing code/state");
-
-  const st = oauthStates.get(state);
-  if (!st) return res.status(400).send("Invalid/expired state. Restart login.");
-
-  oauthStates.delete(state);
-
-  try {
-    const redirectUri = `${baseUrl(req)}/oauth/callback`;
-
-    const basicAuth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
-
-    const tokenResp = await axios.post(
-      "https://auth.fanvue.com/oauth2/token",
-      new URLSearchParams({
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: redirectUri,
-        code_verifier: st.codeVerifier,
-      }).toString(),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Authorization: `Basic ${basicAuth}`,
-        },
-        timeout: 20000,
-      }
-    );
-
-    const accessToken = tokenResp.data.access_token;
-    if (!accessToken) throw new Error("No access_token returned");
-
-    const apiHeaders = {
-      Authorization: `Bearer ${accessToken}`,
-      "X-Fanvue-API-Version": FANVUE_API_VERSION,
-    };
-
-    const profileResp = await axios.get("https://api.fanvue.com/users/me", {
-      headers: apiHeaders,
-      timeout: 20000,
-    });
-
-    const creator = profileResp.data || {};
-
-    const sid = crypto.randomBytes(24).toString("hex");
-
-    sessions.set(sid, {
-      accessToken,
-      creator,
-      ts: Date.now(),
-    });
-
-    setSessionCookie(res, sid);
-
-    return res.redirect("/");
-  } catch (err) {
-    console.error("OAuth callback failed:", err?.response?.status, err?.response?.data || err.message);
-    return res.status(500).send("Authentication failed. Check Render logs.");
-  }
-});
-
 app.get("/daniapp/oauth/start", (req, res) => {
   if (!DANI_CLIENT_ID || !DANI_CLIENT_SECRET || !DANI_REDIRECT_URI) {
-    return res.status(503).send("Missing DANI_CLIENT_ID / DANI_CLIENT_SECRET / DANI_REDIRECT_URI in environment.");
+    return res
+      .status(503)
+      .send("Missing DANI_CLIENT_ID / DANI_CLIENT_SECRET / DANI_REDIRECT_URI.");
   }
 
   const pkce = createPkceState();
-  const redirectUri = DANI_REDIRECT_URI;
 
   const authUrl = new URL("https://auth.fanvue.com/oauth2/auth");
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", DANI_CLIENT_ID);
-  authUrl.searchParams.set("redirect_uri", redirectUri);
-  authUrl.searchParams.set("scope", "openid offline_access write:post write:media read:self");
+  authUrl.searchParams.set("redirect_uri", DANI_REDIRECT_URI);
+  authUrl.searchParams.set(
+    "scope",
+    "openid offline_access write:post write:media read:self"
+  );
   authUrl.searchParams.set("state", pkce.state);
   authUrl.searchParams.set("nonce", pkce.nonce);
   authUrl.searchParams.set("code_challenge", pkce.codeChallenge);
@@ -374,27 +294,29 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
   const { code, state, error, error_description } = req.query;
 
   if (error) {
-    return res.status(400).send(`Fanvue denied authorization: ${error} ${error_description || ""}`);
+    return res
+      .status(400)
+      .send(`Fanvue denied authorization: ${error} ${error_description || ""}`);
   }
 
   if (!code || !state) return res.status(400).send("Missing code/state");
 
   const st = oauthStates.get(state);
-  if (!st) return res.status(400).send("Invalid/expired state. Restart connection.");
+  if (!st) return res.status(400).send("Invalid/expired state.");
 
   oauthStates.delete(state);
 
   try {
-    const redirectUri = DANI_REDIRECT_URI;
-
-    const basicAuth = Buffer.from(`${DANI_CLIENT_ID}:${DANI_CLIENT_SECRET}`).toString("base64");
+    const basicAuth = Buffer.from(
+      `${DANI_CLIENT_ID}:${DANI_CLIENT_SECRET}`
+    ).toString("base64");
 
     const tokenResp = await axios.post(
       "https://auth.fanvue.com/oauth2/token",
       new URLSearchParams({
         grant_type: "authorization_code",
         code,
-        redirect_uri: redirectUri,
+        redirect_uri: DANI_REDIRECT_URI,
         code_verifier: st.codeVerifier,
       }).toString(),
       {
@@ -440,7 +362,6 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
     }
 
     const profile = extractCreatorProfile(creator);
-
     const sid = crypto.randomBytes(24).toString("hex");
 
     sessions.set(sid, {
@@ -451,17 +372,23 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
 
     setSessionCookie(res, sid);
 
-    console.log("DANIAPP TOKEN SUCCESS");
-
     return res.redirect(
       "https://thesuccessmindset.club/daniapp/index.html" +
         "?connected=1" +
-        "&name=" + encodeURIComponent(profile.name) +
-        "&handle=" + encodeURIComponent(profile.handle) +
-        "&avatar=" + encodeURIComponent(profile.avatar)
+        "&name=" +
+        encodeURIComponent(profile.name) +
+        "&handle=" +
+        encodeURIComponent(profile.handle) +
+        "&avatar=" +
+        encodeURIComponent(profile.avatar)
     );
   } catch (err) {
-    console.error("DANIAPP OAUTH FAILED:", err?.response?.status, err?.response?.data || err.message);
+    console.error(
+      "DANIAPP OAUTH FAILED:",
+      err?.response?.status,
+      err?.response?.data || err.message
+    );
+
     return res.status(500).send("DaniApp OAuth failed. Check Render logs.");
   }
 });
@@ -484,7 +411,6 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
   }
 
   const accessToken = s.accessToken;
-
   const caption = String(req.body.caption || "").trim();
   const audience = req.body.audience || "subscribers";
   const postNow = req.body.postNow === "true";
@@ -492,17 +418,11 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
   const priceInput = Number(req.body.price || 0);
 
   if (!caption) {
-    return res.status(400).json({
-      ok: false,
-      error: "Caption is required.",
-    });
+    return res.status(400).json({ ok: false, error: "Caption is required." });
   }
 
   if (!["subscribers", "followers-and-subscribers"].includes(audience)) {
-    return res.status(400).json({
-      ok: false,
-      error: "Invalid audience value.",
-    });
+    return res.status(400).json({ ok: false, error: "Invalid audience." });
   }
 
   if (!postNow && !scheduleTime) {
@@ -511,8 +431,6 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       error: "Schedule time is required unless Post Now is selected.",
     });
   }
-
-  const mediaType = getMediaType(req.file.mimetype);
 
   try {
     const fanvueHeaders = {
@@ -525,7 +443,7 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       {
         name: req.file.originalname,
         filename: req.file.originalname,
-        mediaType,
+        mediaType: getMediaType(req.file.mimetype),
       },
       {
         headers: {
@@ -548,26 +466,18 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
     }
 
     const signedUrlResp = await axios.get(
-      `https://api.fanvue.com/media/uploads/${encodeURIComponent(uploadId)}/parts/1/url`,
+      `https://api.fanvue.com/media/uploads/${encodeURIComponent(
+        uploadId
+      )}/parts/1/url`,
       {
         headers: fanvueHeaders,
         timeout: 30000,
       }
     );
 
-    console.log("SIGNED URL RESPONSE:", signedUrlResp.data);
+    console.log("SIGNED URL RESPONSE:", JSON.stringify(signedUrlResp.data));
 
-    const signedUrl =
-      signedUrlResp.data.url ||
-      signedUrlResp.data.uploadUrl ||
-      signedUrlResp.data.signedUrl ||
-      signedUrlResp.data.presignedUrl ||
-      signedUrlResp.data.href ||
-      signedUrlResp.data.putUrl ||
-      signedUrlResp.data.data?.url ||
-      signedUrlResp.data.data?.uploadUrl ||
-      signedUrlResp.data.data?.signedUrl ||
-      signedUrlResp.data.data?.presignedUrl;
+    const signedUrl = findSignedUrl(signedUrlResp.data);
 
     if (!signedUrl) {
       return res.status(500).json({
@@ -587,7 +497,9 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       validateStatus: (status) => status >= 200 && status < 300,
     });
 
-    const etagRaw = uploadPartResp.headers.etag || uploadPartResp.headers.ETag || "";
+    const etagRaw =
+      uploadPartResp.headers.etag || uploadPartResp.headers.ETag || "";
+
     const etag = String(etagRaw).replace(/^"|"$/g, "");
 
     const completePayload = etag
@@ -633,18 +545,14 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       postPayload.publishAt = new Date(scheduleTime).toISOString();
     }
 
-    const postResp = await axios.post(
-      "https://api.fanvue.com/posts",
-      postPayload,
-      {
-        headers: {
-          ...fanvueHeaders,
-          "Content-Type": "application/json",
-        },
-        timeout: 30000,
-        validateStatus: (status) => status >= 200 && status < 300,
-      }
-    );
+    const postResp = await axios.post("https://api.fanvue.com/posts", postPayload, {
+      headers: {
+        ...fanvueHeaders,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+      validateStatus: (status) => status >= 200 && status < 300,
+    });
 
     return res.json({
       ok: true,
@@ -655,7 +563,11 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       post: postResp.data,
     });
   } catch (err) {
-    console.error("DANIAPP POST FAILED:", err?.response?.status, err?.response?.data || err.message);
+    console.error(
+      "DANIAPP POST FAILED:",
+      err?.response?.status,
+      err?.response?.data || err.message
+    );
 
     return res.status(500).json({
       ok: false,
@@ -668,30 +580,22 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
 app.get("/api/me", (req, res) => {
   const s = getSession(req);
 
-  if (!s) {
-    return res.status(401).json({
-      error: "Not authenticated",
-    });
-  }
+  if (!s) return res.status(401).json({ error: "Not authenticated" });
 
-  const c = s.creator || {};
-  const profile = extractCreatorProfile(c);
+  const profile = extractCreatorProfile(s.creator || {});
 
   return res.json({
     username: profile.name,
     handle: profile.handle,
     avatar_url: profile.avatar,
-    raw: c,
+    raw: s.creator || {},
   });
 });
 
 app.post("/api/logout", (req, res) => {
   const sid = req.signedCookies?.[COOKIE_NAME];
-
   if (sid) sessions.delete(sid);
-
   clearSessionCookie(res);
-
   return res.json({ ok: true });
 });
 
@@ -702,35 +606,14 @@ app.get("/webhooks/fanvue", (req, res) => {
 app.post("/webhooks/fanvue", (req, res) => {
   const ver = verifyFanvueSignature(req);
 
-  if (!ver.ok) {
-    console.warn("Webhook rejected:", ver.reason);
-    return res.status(401).send("invalid signature");
-  }
-
-  const receivedAt = new Date().toISOString();
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
+  if (!ver.ok) return res.status(401).send("invalid signature");
 
   const normalized = normalizeWebhook(req.body);
 
-  const evt = {
-    receivedAt,
-    ip,
-    headers: {
-      "user-agent": req.headers["user-agent"],
-      "content-type": req.headers["content-type"],
-      "x-fanvue-signature": req.headers["x-fanvue-signature"],
-      "x-fanvue-timestamp": req.headers["x-fanvue-timestamp"],
-    },
+  addEvent({
+    receivedAt: new Date().toISOString(),
     normalized,
     body: req.body,
-  };
-
-  addEvent(evt);
-
-  console.log("Fanvue webhook received:", {
-    type: normalized.type,
-    messageUuid: normalized.messageUuid,
-    sender: normalized.senderHandle || normalized.senderName,
   });
 
   return res.status(200).send("ok");
@@ -738,12 +621,7 @@ app.post("/webhooks/fanvue", (req, res) => {
 
 app.get("/api/events", (req, res) => {
   const s = getSession(req);
-
-  if (!s) {
-    return res.status(401).json({
-      error: "Not authenticated",
-    });
-  }
+  if (!s) return res.status(401).json({ error: "Not authenticated" });
 
   return res.json({
     count: webhookEvents.length,
@@ -753,12 +631,7 @@ app.get("/api/events", (req, res) => {
 
 app.get("/api/events/last", (req, res) => {
   const s = getSession(req);
-
-  if (!s) {
-    return res.status(401).json({
-      error: "Not authenticated",
-    });
-  }
+  if (!s) return res.status(401).json({ error: "Not authenticated" });
 
   return res.json(webhookEvents[0] || null);
 });
@@ -776,14 +649,8 @@ app.listen(PORT, () => {
   console.log("=".repeat(60));
   console.log("SERVER READY");
   console.log("=".repeat(60));
-  console.log("Dashboard:  https://fanvue-proxy2.onrender.com/");
-  console.log("OAuth Start: https://fanvue-proxy2.onrender.com/oauth/start");
-  console.log("Callback:    https://fanvue-proxy2.onrender.com/oauth/callback");
-  console.log("Dani Start:  https://fanvue-proxy2.onrender.com/daniapp/oauth/start");
+  console.log("Dani Start: https://fanvue-proxy2.onrender.com/daniapp/oauth/start");
   console.log("Dani Callback: https://fanvue-proxy2.onrender.com/daniapp/oauth/callback");
   console.log("Dani Post API: https://fanvue-proxy2.onrender.com/daniapp/api/post");
-  console.log("Webhook:     https://fanvue-proxy2.onrender.com/webhooks/fanvue");
-  console.log("Events:      https://fanvue-proxy2.onrender.com/api/events");
-  console.log("Last Event:  https://fanvue-proxy2.onrender.com/api/events/last");
   console.log("=".repeat(60));
 });
