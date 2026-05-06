@@ -16,6 +16,11 @@ app.set("trust proxy", true);
 // --- ENV ---
 const CLIENT_ID = (process.env.CLIENT_ID || "").trim();
 const CLIENT_SECRET = (process.env.CLIENT_SECRET || "").trim();
+
+const DANI_CLIENT_ID = (process.env.DANI_CLIENT_ID || "").trim();
+const DANI_CLIENT_SECRET = (process.env.DANI_CLIENT_SECRET || "").trim();
+const DANI_REDIRECT_URI = (process.env.DANI_REDIRECT_URI || "").trim();
+
 const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || "").trim();
 
 const COOKIE_NAME = (process.env.SESSION_COOKIE_NAME || "fanvue_oauth").trim();
@@ -249,6 +254,9 @@ console.log("=".repeat(60));
 console.log(`NODE_ENV: ${process.env.NODE_ENV || "development"}`);
 console.log(`CLIENT_ID present: ${!!CLIENT_ID}`);
 console.log(`CLIENT_SECRET present: ${!!CLIENT_SECRET}`);
+console.log(`DANI_CLIENT_ID present: ${!!DANI_CLIENT_ID}`);
+console.log(`DANI_CLIENT_SECRET present: ${!!DANI_CLIENT_SECRET}`);
+console.log(`DANI_REDIRECT_URI present: ${!!DANI_REDIRECT_URI}`);
 console.log(`ADMIN_TOKEN present: ${!!ADMIN_TOKEN}`);
 console.log(`WEBHOOK_SECRET present: ${!!WEBHOOK_SECRET}`);
 console.log(`PORT: ${PORT}`);
@@ -389,21 +397,20 @@ app.get("/oauth/callback", async (req, res) => {
 // =========================
 
 app.get("/daniapp/oauth/start", (req, res) => {
-  if (!CLIENT_ID || !CLIENT_SECRET) {
+  if (!DANI_CLIENT_ID || !DANI_CLIENT_SECRET || !DANI_REDIRECT_URI) {
     return res
       .status(503)
-      .send("Missing CLIENT_ID / CLIENT_SECRET in environment.");
+      .send("Missing DANI_CLIENT_ID / DANI_CLIENT_SECRET / DANI_REDIRECT_URI in environment.");
   }
 
   const pkce = createPkceState();
 
-  const redirectUri =
-    "https://fanvue-proxy2.onrender.com/daniapp/oauth/callback";
+  const redirectUri = DANI_REDIRECT_URI;
 
   const authUrl = new URL("https://auth.fanvue.com/oauth2/auth");
 
   authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("client_id", CLIENT_ID);
+  authUrl.searchParams.set("client_id", DANI_CLIENT_ID);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set(
     "scope",
@@ -447,11 +454,10 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
   oauthStates.delete(state);
 
   try {
-    const redirectUri =
-      "https://fanvue-proxy2.onrender.com/daniapp/oauth/callback";
+    const redirectUri = DANI_REDIRECT_URI;
 
     const basicAuth = Buffer
-      .from(`${CLIENT_ID}:${CLIENT_SECRET}`)
+      .from(`${DANI_CLIENT_ID}:${DANI_CLIENT_SECRET}`)
       .toString("base64");
 
     const tokenResp = await axios.post(
