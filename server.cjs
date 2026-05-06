@@ -633,11 +633,19 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       }
     );
 
-    const signedUrl =
-      signedUrlResp.data.url ||
-      signedUrlResp.data.uploadUrl ||
-      signedUrlResp.data.signedUrl ||
-      signedUrlResp.data.presignedUrl;
+    console.log("SIGNED URL RESPONSE:", signedUrlResp.data);
+
+const signedUrl =
+  signedUrlResp.data.url ||
+  signedUrlResp.data.uploadUrl ||
+  signedUrlResp.data.signedUrl ||
+  signedUrlResp.data.presignedUrl ||
+  signedUrlResp.data.href ||
+  signedUrlResp.data.putUrl ||
+  signedUrlResp.data.data?.url ||
+  signedUrlResp.data.data?.uploadUrl ||
+  signedUrlResp.data.data?.signedUrl ||
+  signedUrlResp.data.data?.presignedUrl;
 
     if (!signedUrl) {
       return res.status(500).json({
