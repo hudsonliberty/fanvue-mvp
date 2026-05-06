@@ -1,4 +1,4 @@
-// server.cjs — Fanvue MVP + On My Time / DaniApp OAuth Routes
+// server.cjs — Fanvue MVP + On My Time / DaniApp OAuth + Posting
 
 require("dotenv").config();
 
@@ -7,9 +7,11 @@ const axios = require("axios");
 const crypto = require("crypto");
 const path = require("path");
 const cookieParser = require("cookie-parser");
+const multer = require("multer");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+const upload = multer({ storage: multer.memoryStorage() });
 
 app.set("trust proxy", true);
 
@@ -27,6 +29,8 @@ const COOKIE_NAME = (process.env.SESSION_COOKIE_NAME || "fanvue_oauth").trim();
 const SESSION_SECRET = (process.env.SESSION_SECRET || "change-me").trim();
 const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || "").trim();
 
+const FANVUE_API_VERSION = "2025-06-26";
+
 // --- In-memory stores ---
 const oauthStates = new Map();
 const sessions = new Map();
@@ -41,12 +45,12 @@ function rawBodySaver(req, res, buf) {
 // --- Middleware ---
 app.use(
   express.json({
-    limit: "2mb",
+    limit: "20mb",
     verify: rawBodySaver,
   })
 );
 
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(cookieParser(SESSION_SECRET));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -80,8 +84,9 @@ function setSessionCookie(res, sid) {
     signed: true,
     httpOnly: true,
     secure: true,
-    sameSite: "lax",
+    sameSite: "none",
     path: "/",
+    maxAge: 1000 * 60 * 60 * 24 * 30,
   });
 }
 
@@ -247,6 +252,13 @@ function createPkceState() {
   };
 }
 
+function getMediaType(mimetype) {
+  if (mimetype.startsWith("video/")) return "video";
+  if (mimetype.startsWith("audio/")) return "audio";
+  if (mimetype.startsWith("image/")) return "image";
+  return "document";
+}
+
 // --- Startup log ---
 console.log("=".repeat(60));
 console.log("FANVUE MVP STARTING");
@@ -355,7 +367,7 @@ app.get("/oauth/callback", async (req, res) => {
 
     const apiHeaders = {
       Authorization: `Bearer ${accessToken}`,
-      "X-Fanvue-API-Version": "2025-06-26",
+      "X-Fanvue-API-Version": FANVUE_API_VERSION,
     };
 
     const profileResp = await axios.get(
@@ -414,7 +426,7 @@ app.get("/daniapp/oauth/start", (req, res) => {
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set(
     "scope",
-    "openid offline_access write:post write:media read:self"
+    "openid offline_access write:post write:media"
   );
   authUrl.searchParams.set("state", pkce.state);
   authUrl.searchParams.set("nonce", pkce.nonce);
@@ -483,53 +495,11 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
       throw new Error("No access_token returned");
     }
 
-    const apiHeaders = {
-      Authorization: `Bearer ${accessToken}`,
-      "X-Fanvue-API-Version": "2025-06-26",
-    };
-
-    let creator = {};
-
-    try {
-      const profileResp = await axios.get(
-        "https://api.fanvue.com/users/me",
-        {
-          headers: apiHeaders,
-          timeout: 20000,
-        }
-      );
-
-      creator = profileResp.data || {};
-    } catch (profileErr) {
-      console.error(
-        "DANIAPP PROFILE FETCH FAILED:",
-        profileErr?.response?.status,
-        profileErr?.response?.data || profileErr.message
-      );
-
-      creator = {};
-    }
-
-    const displayName =
-      creator.displayName ||
-      creator.name ||
-      creator.handle ||
-      "Fanvue Creator";
-
-    const avatar =
-      creator.avatarUrl ||
-      creator.avatar_url ||
-      creator.avatarUri?.url ||
-      creator.avatarUriSm?.url ||
-      creator.avatarUriXs?.url ||
-      "";
-
     const sid = crypto.randomBytes(24).toString("hex");
 
     sessions.set(sid, {
       accessToken,
       creator: {
-        ...creator,
         app: "On My Time",
         connected: true,
       },
@@ -541,12 +511,7 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
     console.log("DANIAPP TOKEN SUCCESS");
 
     return res.redirect(
-      "https://thesuccessmindset.club/daniapp/index.html" +
-        "?connected=1" +
-        "&name=" +
-        encodeURIComponent(displayName) +
-        "&avatar=" +
-        encodeURIComponent(avatar)
+      "https://thesuccessmindset.club/daniapp/index.html?connected=1"
     );
   } catch (err) {
     console.error(
@@ -558,6 +523,214 @@ app.get("/daniapp/oauth/callback", async (req, res) => {
     return res
       .status(500)
       .send("DaniApp OAuth failed. Check Render logs.");
+  }
+});
+
+// =========================
+// DANIAPP POST API
+// =========================
+
+app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
+  const s = getSession(req);
+
+  if (!s || !s.accessToken) {
+    return res.status(401).json({
+      ok: false,
+      error: "Fanvue is not connected. Reconnect Fanvue first.",
+    });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({
+      ok: false,
+      error: "No media file uploaded.",
+    });
+  }
+
+  const accessToken = s.accessToken;
+
+  const caption = String(req.body.caption || "").trim();
+  const audience = req.body.audience || "subscribers";
+  const postNow = req.body.postNow === "true";
+  const scheduleTime = req.body.scheduleTime || "";
+  const priceInput = Number(req.body.price || 0);
+
+  if (!caption) {
+    return res.status(400).json({
+      ok: false,
+      error: "Caption is required.",
+    });
+  }
+
+  if (!["subscribers", "followers-and-subscribers"].includes(audience)) {
+    return res.status(400).json({
+      ok: false,
+      error: "Invalid audience value.",
+    });
+  }
+
+  if (!postNow && !scheduleTime) {
+    return res.status(400).json({
+      ok: false,
+      error: "Schedule time is required unless Post Now is selected.",
+    });
+  }
+
+  const mediaType = getMediaType(req.file.mimetype);
+
+  try {
+    const fanvueHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+      "X-Fanvue-API-Version": FANVUE_API_VERSION,
+    };
+
+    // 1. Create upload session.
+    const uploadSession = await axios.post(
+      "https://api.fanvue.com/media/uploads",
+      {
+        name: req.file.originalname,
+        filename: req.file.originalname,
+        mediaType,
+      },
+      {
+        headers: {
+          ...fanvueHeaders,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      }
+    );
+
+    const mediaUuid = uploadSession.data.mediaUuid;
+    const uploadId = uploadSession.data.uploadId;
+
+    if (!mediaUuid || !uploadId) {
+      return res.status(500).json({
+        ok: false,
+        error: "Fanvue did not return mediaUuid/uploadId.",
+        raw: uploadSession.data,
+      });
+    }
+
+    // 2. Get signed URL for part 1.
+    const signedUrlResp = await axios.get(
+      `https://api.fanvue.com/media/uploads/${encodeURIComponent(uploadId)}/parts/1/url`,
+      {
+        headers: fanvueHeaders,
+        timeout: 30000,
+      }
+    );
+
+    const signedUrl =
+      signedUrlResp.data.url ||
+      signedUrlResp.data.uploadUrl ||
+      signedUrlResp.data.signedUrl ||
+      signedUrlResp.data.presignedUrl;
+
+    if (!signedUrl) {
+      return res.status(500).json({
+        ok: false,
+        error: "Fanvue did not return a signed upload URL.",
+        raw: signedUrlResp.data,
+      });
+    }
+
+    // 3. Upload file to signed URL.
+    const uploadPartResp = await axios.put(signedUrl, req.file.buffer, {
+      headers: {
+        "Content-Type": req.file.mimetype,
+      },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      timeout: 120000,
+      validateStatus: (status) => status >= 200 && status < 300,
+    });
+
+    const etagRaw =
+      uploadPartResp.headers.etag ||
+      uploadPartResp.headers.ETag ||
+      "";
+
+    const etag = String(etagRaw).replace(/^"|"$/g, "");
+
+    // 4. Complete upload.
+    const completePayload = etag
+      ? {
+          parts: [
+            {
+              ETag: etag,
+              PartNumber: 1,
+            },
+          ],
+        }
+      : {
+          parts: [
+            {
+              PartNumber: 1,
+            },
+          ],
+        };
+
+    const completeResp = await axios.patch(
+      `https://api.fanvue.com/media/uploads/${encodeURIComponent(uploadId)}`,
+      completePayload,
+      {
+        headers: {
+          ...fanvueHeaders,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      }
+    );
+
+    // 5. Create post.
+    const postPayload = {
+      audience,
+      text: caption,
+      mediaUuids: [mediaUuid],
+    };
+
+    if (priceInput > 0) {
+      postPayload.price = Math.round(priceInput * 100);
+    }
+
+    if (!postNow && scheduleTime) {
+      postPayload.publishAt = new Date(scheduleTime).toISOString();
+    }
+
+    const postResp = await axios.post(
+      "https://api.fanvue.com/posts",
+      postPayload,
+      {
+        headers: {
+          ...fanvueHeaders,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+        validateStatus: (status) => status >= 200 && status < 300,
+      }
+    );
+
+    return res.json({
+      ok: true,
+      message: postNow ? "Post created." : "Post scheduled.",
+      mediaUuid,
+      uploadId,
+      mediaStatus: completeResp.data,
+      post: postResp.data,
+    });
+  } catch (err) {
+    console.error(
+      "DANIAPP POST FAILED:",
+      err?.response?.status,
+      err?.response?.data || err.message
+    );
+
+    return res.status(500).json({
+      ok: false,
+      error: "Fanvue post failed.",
+      details: err?.response?.data || err.message,
+    });
   }
 });
 
@@ -710,6 +883,7 @@ app.listen(PORT, () => {
   console.log("Callback:    https://fanvue-proxy2.onrender.com/oauth/callback");
   console.log("Dani Start:  https://fanvue-proxy2.onrender.com/daniapp/oauth/start");
   console.log("Dani Callback: https://fanvue-proxy2.onrender.com/daniapp/oauth/callback");
+  console.log("Dani Post API: https://fanvue-proxy2.onrender.com/daniapp/api/post");
   console.log("Webhook:     https://fanvue-proxy2.onrender.com/webhooks/fanvue");
   console.log("Events:      https://fanvue-proxy2.onrender.com/api/events");
   console.log("Last Event:  https://fanvue-proxy2.onrender.com/api/events/last");
