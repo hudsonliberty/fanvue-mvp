@@ -52,10 +52,6 @@ app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(cookieParser(SESSION_SECRET));
 app.use(express.static(path.join(__dirname, "public")));
 
-function baseUrl(req) {
-  return `https://${req.get("host")}`;
-}
-
 function requireAdmin(req, res, next) {
   if (!ADMIN_TOKEN) return next();
   const got = (req.get("x-admin-token") || "").trim();
@@ -249,8 +245,6 @@ console.log("=".repeat(60));
 console.log("FANVUE MVP STARTING");
 console.log("=".repeat(60));
 console.log(`NODE_ENV: ${process.env.NODE_ENV || "development"}`);
-console.log(`CLIENT_ID present: ${!!CLIENT_ID}`);
-console.log(`CLIENT_SECRET present: ${!!CLIENT_SECRET}`);
 console.log(`DANI_CLIENT_ID present: ${!!DANI_CLIENT_ID}`);
 console.log(`DANI_CLIENT_SECRET present: ${!!DANI_CLIENT_SECRET}`);
 console.log(`DANI_REDIRECT_URI present: ${!!DANI_REDIRECT_URI}`);
@@ -412,7 +406,7 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
 
   const accessToken = s.accessToken;
   const caption = String(req.body.caption || "").trim();
-  const audience = req.body.audience || "subscribers";
+  const audience = req.body.audience || "followers-and-subscribers";
   const postNow = req.body.postNow === "true";
   const scheduleTime = req.body.scheduleTime || "";
   const priceInput = Number(req.body.price || 0);
@@ -531,10 +525,16 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       }
     );
 
+    console.log("UPLOAD COMPLETE:", completeResp.data);
+
+    await new Promise((resolve) => setTimeout(resolve, 8000));
+
     const postPayload = {
-      audience,
       text: caption,
       mediaUuids: [mediaUuid],
+      audience: audience,
+      visibility: "followers-and-subscribers",
+      isArchived: false,
     };
 
     if (priceInput > 0) {
@@ -545,6 +545,8 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       postPayload.publishAt = new Date(scheduleTime).toISOString();
     }
 
+    console.log("CREATE POST PAYLOAD:", postPayload);
+
     const postResp = await axios.post("https://api.fanvue.com/posts", postPayload, {
       headers: {
         ...fanvueHeaders,
@@ -553,6 +555,8 @@ app.post("/daniapp/api/post", upload.single("media"), async (req, res) => {
       timeout: 30000,
       validateStatus: (status) => status >= 200 && status < 300,
     });
+
+    console.log("CREATE POST RESPONSE:", postResp.data);
 
     return res.json({
       ok: true,
